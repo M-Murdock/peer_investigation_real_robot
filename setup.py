@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'session_gui = investigating_peer_real_robot.session_gui:main',
         ],
     },
 )
