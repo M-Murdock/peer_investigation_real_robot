@@ -36,7 +36,7 @@ FACTOR_B_NAME = 'Ordering'
 FACTOR_B_LEVELS = ['Environment A', 'Environment B']
 
 # Topics captured in the rosbag alongside the GUI's own audio/video capture.
-BAG_TOPICS = ['/camera/image_raw', '/joint_states']
+BAG_TOPICS = ['/camera/image_raw', '/joint_states', '/joy']
 
 DEFAULT_OUTPUT_DIR = os.path.expanduser('~/investigating_peer_recordings')
 DEFAULT_CAMERA_DEVICE = '/dev/video0'
