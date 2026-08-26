@@ -1,6 +1,6 @@
 """
 Print a table of all MuJoCo joints and their properties, then write
-docs/validation/mujoco_joint_table.md.
+docs/mujoco_joint_table.md.
 
 Usage:
     uv run python scripts/model_validation/inspect_joints.py

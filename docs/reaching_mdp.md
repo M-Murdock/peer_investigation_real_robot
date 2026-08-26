@@ -2,7 +2,7 @@
 
 Builds the full `ManagerBasedRlEnvCfg` for the reaching-with-avoidance task
 on top of the M1-validated arm and the table+obstacle scene
-(`docs/validation/mjlab_asset.md`, `docs/validation/reaching_scene.md`).
+(`docs/mjlab_asset.md`, `docs/reaching_scene.md`).
 Implements runbook sections 21–26. Code: `src/kinova_mjlab_reaching/tasks/reaching/`.
 
 ## Dependency fix (blocking, unrelated to the MDP itself)

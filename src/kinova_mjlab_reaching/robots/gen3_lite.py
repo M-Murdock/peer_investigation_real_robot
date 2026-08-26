@@ -1,7 +1,7 @@
 """Kinova Gen3 Lite MJLab robot asset.
 
 Wraps the M1-validated MJCF (assets/kinova_gen3_lite/gen3_lite.xml) as an
-mjlab EntityCfg. Do not re-derive the model here — see docs/validation/ for
+mjlab EntityCfg. Do not re-derive the model here — see docs/ for
 the FK, joint-mapping, and actuator validation this file depends on.
 """
 
@@ -27,9 +27,9 @@ def get_spec() -> mujoco.MjSpec:
 
 # Wrap the 6 <position> actuators already defined and validated in the MJCF
 # (kp=100, kv=10, ctrlrange = joint range — see
-# docs/validation/ros_reference_model.md) instead of re-specifying gains.
+# docs/ros_reference_model.md) instead of re-specifying gains.
 # Gripper joints (right/left_finger_*) are intentionally left unactuated —
-# passive per docs/validation/joint_mapping.md.
+# passive per docs/joint_mapping.md.
 ARM_ACTUATORS = (XmlActuatorCfg(target_names_expr=("joint_[1-6]",)),)
 
 ##
@@ -37,7 +37,7 @@ ARM_ACTUATORS = (XmlActuatorCfg(target_names_expr=("joint_[1-6]",)),)
 ##
 
 # All-zero pose matches the "zero" configuration validated in
-# docs/validation/fk_validation.md.
+# docs/fk_validation.md.
 HOME_KEYFRAME = EntityCfg.InitialStateCfg(joint_pos={".*": 0.0})
 
 ##

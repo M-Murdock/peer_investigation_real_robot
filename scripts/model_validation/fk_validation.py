@@ -13,7 +13,7 @@ URDF→MJCF conversion preserved the kinematic chain correctly.
 Acceptance criterion (from runbook Section 18):
   position error < 1 mm  (numerical precision of URDF→MJCF round-trip)
 
-Writes results to docs/validation/fk_validation.md.
+Writes results to docs/fk_validation.md.
 
 Usage:
     uv run python scripts/model_validation/fk_validation.py

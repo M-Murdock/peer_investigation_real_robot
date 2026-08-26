@@ -4,7 +4,7 @@ Adds the physical setting for the reaching-with-avoidance task: the arm is
 mounted at the back edge of a tea-serving table, with static obstacles
 (placeholder tea-set geometry) the policy must learn to avoid. Built in
 `src/kinova_mjlab_reaching/tasks/reaching/scene.py`, on top of the
-M1-validated arm (`docs/validation/mjlab_asset.md`).
+M1-validated arm (`docs/mjlab_asset.md`).
 
 ## Design
 

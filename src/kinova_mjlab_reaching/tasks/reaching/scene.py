@@ -2,7 +2,7 @@
 obstacles the arm must learn to avoid while reaching.
 
 The robot's fixed base sits at the world origin (see
-docs/validation/mjlab_asset.md). All objects are placeholder primitives with
+docs/mjlab_asset.md). All objects are placeholder primitives with
 no freejoint — they are static/immovable collision bodies, not manipulable
 objects.
 
@@ -74,7 +74,7 @@ def get_table_spec() -> mujoco.MjSpec:
 
 # Mount-frame (depth, lateral) placement, sized against the sampled reachable
 # envelope at table height (median radial reach ~0.37 m, p95 ~0.69 m — see
-# docs/validation/reaching_scene.md): comfortably reachable, not edge-of-range.
+# docs/reaching_scene.md): comfortably reachable, not edge-of-range.
 _TEAPOT_MOUNT_XY = (0.40, 0.0)
 _CUP1_MOUNT_XY = (0.30, 0.18)
 _CUP2_MOUNT_XY = (0.30, -0.18)

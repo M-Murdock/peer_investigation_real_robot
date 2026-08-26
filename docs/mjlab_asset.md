@@ -10,9 +10,9 @@ itself is unmodified — only referenced.
   by joint-name regex (`joint_[1-6]`) instead of re-specifying kp/kv/effort
   limits, so the M1-validated gains (kp=100, kv=10) carry through unchanged.
 - **Gripper joints:** left unactuated (no `ActuatorCfg` targets them),
-  consistent with `docs/validation/joint_mapping.md`.
+  consistent with `docs/joint_mapping.md`.
 - **Home keyframe:** all joints at 0 rad, matching the "zero" configuration
-  in `docs/validation/fk_validation.md`.
+  in `docs/fk_validation.md`.
 - **Soft joint limits:** `soft_joint_pos_limit_factor=0.9`, matching the
   convention used by every robot in mjlab's own asset zoo (YAM, G1, Go1).
 - **Collisions:** left at MJCF defaults (no dedicated collision geoms exist

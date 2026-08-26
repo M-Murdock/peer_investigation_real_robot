@@ -1,7 +1,7 @@
 # PPO Baseline Training (M2.1)
 
 Trains the reaching-with-avoidance policy defined in
-`docs/validation/reaching_mdp.md`. Runbook section 27.
+`docs/reaching_mdp.md`. Runbook section 27.
 
 ## Setup
 

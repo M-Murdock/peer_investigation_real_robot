@@ -25,7 +25,7 @@ runbook section 24 ("do not add many reward terms before the baseline is
 understood"); distance-based avoidance shaping is left for the robustness
 stage (section 29) if the baseline needs it. Table contact was added after
 an early training run showed the arm wedging its elbow against the table
-with no explicit signal to route around it — see docs/validation/ppo_baseline.md.
+with no explicit signal to route around it — see docs/ppo_baseline.md.
 
 No custom reset events are configured — the default `reset_scene_to_default`
 event (see mjlab.envs.mdp.events) already resets every entity (robot, table,
