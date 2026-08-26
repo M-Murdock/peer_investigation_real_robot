@@ -8,7 +8,7 @@ registry import (kinova_mjlab_reaching.tasks.reaching registers itself).
 
 Usage:
     uv run python scripts/watch_training.py
-    uv run python scripts/watch_training.py --checkpoint-dir checkpoints/kinova_reach/2026-08-25_22-35-31
+    uv run python scripts/watch_training.py --checkpoint-dir checkpoints/2026-08-25_22-35-31
 """
 
 import argparse
@@ -24,7 +24,7 @@ from mjlab.viewer.viser import ViserPlayViewer
 from kinova_mjlab_reaching.tasks.reaching.agents.ppo_cfg import get_reaching_ppo_cfg
 from kinova_mjlab_reaching.tasks.reaching.reach_env_cfg import get_reaching_env_cfg
 
-CHECKPOINTS_ROOT = Path("checkpoints/kinova_reach")
+CHECKPOINTS_ROOT = Path("checkpoints")
 
 
 def latest_checkpoint_dir() -> Path:
@@ -50,7 +50,7 @@ def main() -> None:
         "--checkpoint-dir",
         type=Path,
         default=None,
-        help="Defaults to the most recently modified run under checkpoints/kinova_reach/",
+        help="Defaults to the most recently modified run under checkpoints/",
     )
     args = parser.parse_args()
 

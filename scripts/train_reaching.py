@@ -24,7 +24,7 @@ def main() -> None:
 
     env_cfg = get_reaching_env_cfg(num_envs=args.num_envs)
     agent_cfg = get_reaching_ppo_cfg(max_iterations=args.max_iterations)
-    train_cfg = TrainConfig(env=env_cfg, agent=agent_cfg, log_root="checkpoints")
+    train_cfg = TrainConfig(env=env_cfg, agent=agent_cfg, log_root="")
 
     launch_training(TASK_ID, train_cfg)
 

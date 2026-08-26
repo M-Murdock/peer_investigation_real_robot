@@ -38,7 +38,7 @@ def get_reaching_ppo_cfg(max_iterations: int = 1000) -> RslRlOnPolicyRunnerCfg:
             desired_kl=0.01,
             max_grad_norm=1.0,
         ),
-        experiment_name="kinova_reach",
+        experiment_name="checkpoints",
         logger="tensorboard",
         save_interval=50,
         num_steps_per_env=24,

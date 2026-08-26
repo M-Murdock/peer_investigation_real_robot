@@ -18,7 +18,7 @@ against a fresh batch of episodes and classifies each one explicitly:
     failure_no_collision     never reached the target, ran out of time
 
 Usage:
-    uv run python scripts/evaluate_reaching.py --checkpoint checkpoints/kinova_reach/<run>/model_4999.pt
+    uv run python scripts/evaluate_reaching.py --checkpoint checkpoints/<run>/model_4999.pt
 """
 
 import argparse

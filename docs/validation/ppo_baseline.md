@@ -21,7 +21,7 @@ Trains the reaching-with-avoidance policy defined in
   dependency entirely for a first baseline.
 - **Training script:** `scripts/train_reaching.py` — thin wrapper around
   `mjlab.scripts.train.launch_training`, with `--num-envs`/`--max-iterations`
-  CLI overrides. Logs to `checkpoints/kinova_reach/<timestamp>/` (repo's own
+  CLI overrides. Logs to `checkpoints/<timestamp>/` (repo's own
   `checkpoints/` convention from the runbook's target tree, rather than
   mjlab's own default `logs/rsl_rl`).
 
@@ -29,13 +29,13 @@ Trains the reaching-with-avoidance policy defined in
 
 Two ways to watch a run, usable simultaneously and while training continues:
 
-- **TensorBoard** (reward/loss curves): `uv run tensorboard --logdir checkpoints/kinova_reach --port 6006`,
+- **TensorBoard** (reward/loss curves): `uv run tensorboard --logdir checkpoints --port 6006`,
   then open `http://localhost:6006`.
 - **Live 3D viewer** (`scripts/watch_training.py`): a browser-based Viser
   viewer (mjlab's `ViserPlayViewer`) that loads the latest checkpoint from a
   run directory and hot-swaps to newer ones as they're saved — watch the
   actual policy's behavior evolve without stopping training. Usage:
-  `uv run python scripts/watch_training.py --checkpoint-dir checkpoints/kinova_reach/<run>`
+  `uv run python scripts/watch_training.py --checkpoint-dir checkpoints/<run>`
   (defaults to the most recently modified run dir), then open the printed
   `http://localhost:8080`. Built by adapting the TRAINED_MODE + viser code
   path in `mjlab.scripts.play` directly against our env/agent configs,
@@ -189,7 +189,7 @@ any reset for that step could contaminate it (see the comment in
 
 ```
 uv run python scripts/evaluate_reaching.py \
-    --checkpoint checkpoints/kinova_reach/2026-08-26_09-58-07/model_4999.pt \
+    --checkpoint checkpoints/2026-08-26_09-58-07/model_4999.pt \
     --num-envs 256 --episodes-per-env 8 --device cuda:0
 
 Success rate (ever reached target):     83.3%
