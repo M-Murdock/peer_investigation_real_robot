@@ -20,23 +20,32 @@ tasks (e.g. YAM lift-cube) use.
 
 Collision avoidance: a hard termination on any contact between the robot's
 arm subtree and each obstacle *and the table itself* (see
-mdp/terminations.py), not a reward penalty — kept out of the reward per
-runbook section 24 ("do not add many reward terms before the baseline is
-understood"); distance-based avoidance shaping is left for the robustness
-stage (section 29) if the baseline needs it. Table contact was added after
+mdp/terminations.py) — the only avoidance signal in the M2.1 baseline,
+kept out of the reward per runbook section 24 ("do not add many reward
+terms before the baseline is understood"). Table contact was added after
 an early training run showed the arm wedging its elbow against the table
 with no explicit signal to route around it — see docs/ppo_baseline.md.
 
-No custom reset events are configured — the default `reset_scene_to_default`
-event (see mjlab.envs.mdp.events) already resets every entity (robot, table,
-obstacles) to the EntityCfg-configured init_state, including env_origins
-offsetting, which is all this task needs since the obstacles are static.
+M2.2 (runbook section 29, robustness stage) adds dense collision-distance
+reward shaping (`obstacle_proximity_penalty`) on top of the hard
+termination, targeting the 6.3% residual teapot-collision rate the
+termination alone left in the M2.1 held-out evaluation — see
+docs/ppo_baseline.md.
+
+Reset events: `reset_scene_to_default` (see mjlab.envs.mdp.events) resets
+every entity (robot, table, obstacles) to its EntityCfg-configured
+init_state, including env_origins offsetting — the obstacles are static so
+that alone is all they need. `reset_robot_joints` (M2.2, runbook section 29
+"q0 ~ safe distribution") then perturbs the arm's joints by a small uniform
+offset around that default/home pose, so every episode starts from a
+slightly different configuration instead of always the exact same one.
 """
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.command_manager import CommandTermCfg
+from mjlab.managers.event_manager import EventTermCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
@@ -50,6 +59,7 @@ from kinova_mjlab_reaching.robots.gen3_lite import get_gen3_lite_robot_cfg
 from kinova_mjlab_reaching.tasks.reaching.mdp.commands import ReachingCommandCfg
 from kinova_mjlab_reaching.tasks.reaching.mdp.observations import ee_to_target_distance
 from kinova_mjlab_reaching.tasks.reaching.mdp.rewards import (
+    obstacle_proximity_penalty,
     reaching_distance_reward,
     target_reached_bonus,
 )
@@ -70,7 +80,6 @@ _TABLE_NAME = "table"
 _COLLISION_NAMES = _OBSTACLE_NAMES + (_TABLE_NAME,)
 _COMMAND_NAME = "reach_target"
 _SUCCESS_THRESHOLD = 0.03  # meters, runbook section 24.
-
 
 def _collision_contact_sensor_cfg(body_name: str) -> ContactSensorCfg:
     """Contact sensor between the arm subtree and a single named entity.
@@ -134,6 +143,27 @@ def get_reaching_env_cfg(num_envs: int = 1) -> ManagerBasedRlEnvCfg:
         )
     }
 
+    events: dict[str, EventTermCfg] = {
+        "reset_scene_to_default": EventTermCfg(
+            func=mdp.reset_scene_to_default, mode="reset"
+        ),
+        "reset_robot_joints": EventTermCfg(
+            func=mdp.reset_joints_by_offset,
+            mode="reset",
+            params={
+                # +-0.2 rad (~11 deg) per arm joint around the home pose —
+                # comfortably inside the ~1.0 rad range the action space
+                # already operates in (see JointPositionActionCfg's TODO
+                # below). Verified 2026-08-26: 0/10240 reset+step samples
+                # spawned in collision with any obstacle/table (see
+                # docs/ppo_baseline.md), so this range is safe as-is.
+                "position_range": (-0.2, 0.2),
+                "velocity_range": (0.0, 0.0),
+                "asset_cfg": _ARM_JOINTS_CFG,
+            },
+        ),
+    }
+
     rewards = {
         "reaching": RewardTermCfg(
             func=reaching_distance_reward,
@@ -150,6 +180,15 @@ def get_reaching_env_cfg(num_envs: int = 1) -> ManagerBasedRlEnvCfg:
             params={
                 "command_name": _COMMAND_NAME,
                 "success_threshold": _SUCCESS_THRESHOLD,
+                "asset_cfg": _EE_SITE_CFG,
+            },
+        ),
+        "obstacle_proximity": RewardTermCfg(
+            func=obstacle_proximity_penalty,
+            weight=-1.0,
+            params={
+                "obstacle_names": _OBSTACLE_NAMES,
+                "std": 0.08,
                 "asset_cfg": _EE_SITE_CFG,
             },
         ),
@@ -181,6 +220,7 @@ def get_reaching_env_cfg(num_envs: int = 1) -> ManagerBasedRlEnvCfg:
         observations=observations,
         actions=actions,
         commands=commands,
+        events=events,
         rewards=rewards,
         terminations=terminations,
         episode_length_s=4.0,
