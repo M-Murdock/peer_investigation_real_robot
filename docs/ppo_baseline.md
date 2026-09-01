@@ -433,3 +433,64 @@ old and new policies are evaluated against.
       easy-to-hard progression). Dynamics randomization stays deferred
       ("later and only where needed" per the runbook) until ROS2/physical
       deployment (M3/M3.1) is actually attempted.
+
+## M2.2 — Joint velocity penalty (`joint_vel_l2`) — reverted, negative result
+
+Attempted the remaining "velocity limits" item from runbook section 29's
+safety-terms list: a dense `joint_vel_l2` penalty (mjlab's built-in L2
+squared-velocity term) on top of the M2.2 checkpoint above, aimed at
+smoother/slower motion ahead of real-hardware deployment — a real
+requirement, not just a training-time metric (see
+`kinova_gen3_lite_mujoco_mjlab_reaching_runbook.md`, which places dynamics
+robustness and safety terms before ROS2 deployment, not after).
+
+`scripts/evaluate_reaching.py` had no way to measure raw joint-speed
+magnitude before this — training-time `Episode_Reward/joint_vel_l2` is
+only logged for runs that have the term at all, so there was no way to
+compare against the no-penalty baseline. Added a held-out per-arm-joint
+RMS joint-speed metric (rad/s, over the full deterministic rollout) to
+the script specifically to make this comparison possible.
+
+Tried five full 10,000-iteration training runs plus two 2,500-iteration
+collapse-screening probes, sweeping the weight:
+
+| Weight | Outcome | Joint speed RMS (rad/s) | Success | Collision |
+|---|---|---|---|---|
+| none (M2.2 baseline) | — | 1.245 | 96.0% | 7.3% |
+| -0.001 (run 1) | trained | 1.305 (+4.8%) | 96.6% | 6.4% |
+| -0.001 (run 2) | trained | 1.304 (+4.7%) | 94.8% | 8.1% |
+| -0.0015 | trained | 1.272 (+2.2%) | 95.0% | 10.0% |
+| -0.002 | trained | 1.326 (+6.5%) | 95.9% | 7.1% |
+| -0.003 | **collapsed** | — | — | — |
+| -0.01 | **collapsed** | — | — | — |
+
+**Two failure modes, no usable middle ground between them.** Above
+roughly -0.002, the penalty makes "stand still" a trivial zero-cost way
+to minimize every per-step safety term at once, before the policy has
+discovered the reaching bonus at all — training collapses to
+near-deterministic inaction (action std pinned at ~0.01, entropy loss
+deeply negative, 0% episode success for the entire run), the same
+entropy-collapse failure mode seen once before in the M2.1 extended run.
+Below that, across four separate runs (-0.001 x2, -0.0015, -0.002),
+joint-speed RMS never dropped below the no-penalty baseline — it moved
+non-monotonically between +2.2% and +6.5% above it, which is the
+signature of run-to-run PPO variance dominating any real effect of the
+weight, not a tunable dose-response relationship. Success and collision
+rates likewise stayed within the noise band already established for this
+task, with no consistent direction.
+
+**Conclusion: this reward formulation (raw per-step L2 sum of joint
+velocities, linear weight) doesn't have a usable weight for this task.**
+Reverted entirely — `reach_env_cfg.py` and the reward set are back to the
+M2.2 state above, `checkpoints/2026-08-27_12-52-48/model_9999.pt` remains
+the current best policy. `scripts/evaluate_reaching.py`'s new joint-speed
+RMS metric stays, since it's needed for any future attempt at this.
+
+If revisited: candidates worth trying instead of a bigger sweep of the
+same formulation — a per-step *average* rather than *sum* over joints (so
+the raw magnitude doesn't scale with joint count, which may be part of
+why the safe range was so narrow), a weight schedule that anneals in
+only after the reaching bonus is reliably discovered (sidestepping the
+early-training "stand still" attractor entirely), or a hard velocity
+*limit* (clipping the action-derived target, per the runbook's literal
+"velocity limits" wording) instead of a soft reward penalty.

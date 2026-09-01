@@ -30,7 +30,10 @@ import torch
 
 from kinova_mjlab_reaching.tasks.reaching.agents.ppo_cfg import get_reaching_ppo_cfg
 from kinova_mjlab_reaching.tasks.reaching.mdp.commands import ReachingCommand
-from kinova_mjlab_reaching.tasks.reaching.reach_env_cfg import get_reaching_env_cfg
+from kinova_mjlab_reaching.tasks.reaching.reach_env_cfg import (
+    _ARM_JOINTS_CFG,
+    get_reaching_env_cfg,
+)
 from mjlab.envs import ManagerBasedRlEnv
 from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
 
@@ -85,6 +88,18 @@ def main() -> None:
     max_episode_length = raw_env.max_episode_length
     num_steps = max_episode_length * args.episodes_per_env
 
+    # Raw joint-speed magnitude — not something training curves expose
+    # directly, since Episode_Reward/joint_vel_l2 is only logged for runs
+    # that actually have the term (weight != 0). Measuring it here, on a
+    # frozen deterministic policy, gives an apples-to-apples smoothness
+    # comparison across checkpoints regardless of what each one trained
+    # with — the thing joint_vel_l2 is meant to improve for real-hardware
+    # readiness, not just a proxy like success/collision rate.
+    arm_joints = _ARM_JOINTS_CFG
+    arm_joints.resolve(raw_env.scene)
+    joint_speed_sq_sum = 0.0
+    joint_speed_sq_count = 0
+
     ever_succeeded = torch.zeros(env.num_envs, dtype=torch.bool, device=args.device)
     steps_to_success = torch.zeros(env.num_envs, dtype=torch.long, device=args.device)
     step_in_episode = torch.zeros(env.num_envs, dtype=torch.long, device=args.device)
@@ -107,6 +122,10 @@ def main() -> None:
             actions = policy(obs)
             obs, _, dones, _ = env.step(actions)
             step_in_episode += 1
+
+            joint_vel = raw_env.scene["robot"].data.joint_vel[:, arm_joints.joint_ids]
+            joint_speed_sq_sum += torch.sum(torch.square(joint_vel)).item()
+            joint_speed_sq_count += joint_vel.numel()
 
             pos_err = command.metrics["position_error"]
             newly_succeeded = (~ever_succeeded) & (pos_err < success_threshold)
@@ -194,6 +213,9 @@ def main() -> None:
         print("Time-to-target, successful episodes only (s):")
         print(f"  median: {np.median(times_to_success):.3f}")
         print(f"  p90:    {np.percentile(times_to_success, 90):.3f}")
+    print()
+    print("Joint speed, per-arm-joint RMS over the whole rollout (rad/s):")
+    print(f"  {(joint_speed_sq_sum / joint_speed_sq_count) ** 0.5:.4f}")
 
 
 if __name__ == "__main__":
