@@ -1,0 +1,87 @@
+# Measured Env A / Env B tea-table object poses (runbook v2 section 21B).
+#
+# Frame: robot base frame (robot's fixed base = world origin, per
+# docs/mjlab_asset.md and docs/fk_validation.md). position_xyz in meters.
+# orientation_xyzw is a scalar-last quaternion (ROS/runbook convention) -
+# object_pose_registry.py converts to MuJoCo's scalar-first wxyz on load.
+#
+# Object-frame origin convention (runbook section 21A.2): each object's
+# local origin is the center of its base, resting exactly on the tabletop
+# (z=0 in the object's own frame = bottom face). position_xyz below is
+# therefore the object's base-center contact point on the table, not its
+# centroid.
+#
+# Table footprint/pose and object HEIGHT (z) are real, derived from the
+# measured table setup:
+#
+#   Table footprint: 23.5 in x 29 in, 1 3/16 in thick. Arm base sits on a
+#   2-in-thick cylindrical fixture bolted to the table, offset from the
+#   table edges such that, in the arm-base-origin frame: x in [-3, 26] in,
+#   y in [-2, 21.5] in (this range was given directly and is authoritative
+#   - table center/half-extents below are derived from it, not from the
+#   separately-stated "2 in / 3 in from the two edges" figures, which
+#   don't quite reconcile with the ranges; the ranges were treated as
+#   ground truth).
+#   => table center (x,y): ((-3+26)/2, (-2+21.5)/2) in = (11.5, 9.75) in
+#      = (0.2921, 0.2477) m
+#   => table half-extents (x,y): (14.5, 11.75) in = (0.3683, 0.29845) m
+#
+#   The fixture makes the arm base 2 in HIGHER than the tabletop surface,
+#   so every object's z (base resting on the table) is -2 in = -0.0508 m,
+#   not 0 - worth remembering that the checkpoint's own training task never
+#   had this height offset (targets were sampled at ~arm-base height, not
+#   5 cm below it) - see docs/ppo_baseline.md for what the trained policy
+#   actually saw.
+#
+# env_a object positions/orientations below are REAL measurements. yaw was
+# given relative to -y (CCW positive); orientation_xyzw here is expressed
+# as a standard yaw from +x (CCW positive, matching the quaternion/MuJoCo
+# convention), i.e. yaw_standard = yaw_measured - 90deg. At yaw_standard=0,
+# an object's handle points along world +x (see objects.py's handle
+# geometry - INFUSER_GRASP_SITE_POS / MUG handle / KETTLE_GRASP_SITE_POS
+# are all built along local +x, except the kettle's, which is on-axis and
+# yaw-invariant for the grasp *point* even though the plates still rotate).
+#
+# env_b object positions/orientations below are REAL measurements too, same
+# yaw convention as env_a. The infuser's measured handle direction was
+# opposite the built geometry's +x convention in env_a too (see its note
+# below) - same physical object/measurement convention, so the same +180deg
+# correction is applied here as well.
+
+table:
+  position_xyz: [0.2921, 0.2477, -0.0658] # center; top surface at z=-0.0508
+  orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+env_a:
+  kettle:
+    # 20.5, 17 1/8 in; yaw 20deg from -y -> yaw_standard -70deg
+    position_xyz: [0.5207, 0.43498, -0.0508]
+    orientation_xyzw: [0.0, 0.0, -0.573576, 0.819152]
+  mug:
+    # 16 1/4, 8.5 in; yaw -30deg from -y -> yaw_standard -120deg
+    position_xyz: [0.41275, 0.2159, -0.0508]
+    orientation_xyzw: [0.0, 0.0, -0.866025, 0.5]
+  infuser:
+    # 1 5/8, 9 6/8 in; yaw 15deg from -y -> yaw_standard -75deg, +180deg
+    # (measured handle direction was opposite the built geometry's +x
+    # convention) -> yaw_standard 105deg
+    position_xyz: [0.04127, 0.24765, -0.0508]
+    orientation_xyzw: [0.0, 0.0, 0.793353, 0.608761]
+
+env_b:
+  kettle:
+    # 22, 7 in; yaw -45deg from -y -> yaw_standard -135deg
+    position_xyz: [0.5588, 0.1778, -0.0508]
+    orientation_xyzw: [0.0, 0.0, -0.92388, 0.382683]
+  mug:
+    # 6 5/8, 15 3/8 in; yaw -55deg from -y -> yaw_standard -145deg
+    position_xyz: [0.16827, 0.39053, -0.0508]
+    orientation_xyzw: [0.0, 0.0, -0.953717, 0.300706]
+  infuser:
+    # 23.5, 17.5 in; yaw 10deg from -y -> yaw_standard -80deg, +180deg
+    # (handle-direction correction, see header note) -> yaw_standard 100deg,
+    # +180deg more (2026-09-01, testing whether flipping the handle toward
+    # the arm brings the pregrasp point back into reach) -> yaw_standard
+    # 280deg (equiv -80deg)
+    position_xyz: [0.5969, 0.4445, -0.0508]
+    orientation_xyzw: [0.0, 0.0, 0.642788, -0.766044]

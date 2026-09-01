@@ -1,0 +1,86 @@
+# Object-relative grasp/pre-grasp transforms (runbook v2 section 21C).
+# One entry per object CLASS, reused across Env A and Env B - only the
+# object's own 6D pose (tea_table_objects.yaml) differs between scenes.
+#
+# ALL VALUES BELOW ARE PLACEHOLDERS. In particular grasp_pose orientation
+# and gripper_close_command cannot be filled in honestly yet - they depend
+# on the real gripper tool-frame convention and Kortex gripper command
+# interface, neither of which is recorded anywhere in this project yet
+# (see the measurement list). Position-only fields are geometrically
+# plausible placeholders (matching objects.py's placeholder handle/rim
+# geometry) for pipeline/transform-chain testing, not real grasp points.
+#
+# grasp_pose_in_object_frame: pose of the gripper AT the grasp point,
+#   expressed in the object's own local frame (same origin convention as
+#   tea_table_objects.yaml: base-center, resting on the table, z=0 = bottom).
+# pregrasp_offset_in_grasp_frame: translation from the grasp pose to the
+#   pre-grasp pose, expressed in the GRASP pose's own frame (i.e. applied
+#   after grasp orientation, so "pull back along approach direction" stays
+#   correct regardless of the object's world orientation).
+# descent_distance_m: straight-line distance from pre-grasp to grasp along
+#   the grasp frame's local -z (DESCEND stage, section 23A) - not yet used
+#   since DESCEND/CLOSE aren't implemented at this stage.
+# gripper_close_command: TBD, see docs/validation - depends on the Kortex
+#   ros2_control gripper interface, not yet recorded (runbook section 34).
+
+kettle:
+  # Measured top loop (bail) handle - grasp point is the bar midpoint, see
+  # objects.py KETTLE_GRASP_SITE_POS. Orientation left identity - TBD
+  # pending gripper tool-frame convention.
+  #
+  # pregrasp_offset increased 0.05 -> 0.10 -> 0.15 (2026-09-01): the reach-
+  # test diagnostic found the real grasp target is 100% reachable/
+  # collision-free in isolation (no kettle object present) - the 51.4%
+  # collision rate in the full scene was entirely the kettle's own
+  # 6.5in-diameter body/handle assembly blocking the approach, not a
+  # reach-limit or training-distribution problem. 0.10 got collisions down
+  # to 4.8%; bumping further for a clean 0%.
+  grasp_pose_in_object_frame:
+    position_xyz: [0.0, 0.0, 0.2286]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+  pregrasp_offset_in_grasp_frame:
+    position_xyz: [0.0, 0.0, 0.15]
+  descent_distance_m: 0.15
+  gripper_close_command: null # TBD
+
+mug:
+  # Placeholder rim-grasp point (see objects.py mug_rim_site), on the near
+  # side of the rim relative to the object origin.
+  grasp_pose_in_object_frame:
+    position_xyz: [0.045, 0.0, 0.08]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+  pregrasp_offset_in_grasp_frame:
+    position_xyz: [0.0, 0.0, 0.05]
+  descent_distance_m: 0.04
+  gripper_close_command: null # TBD
+
+infuser:
+  # Measured side loop handle - grasp point is the outer bar midpoint, see
+  # objects.py INFUSER_GRASP_SITE_POS. Pregrasp pulls back outward (+x,
+  # away from the body) and lifts up (+z), rather than approaching purely
+  # from above like the kettle's top handle. Orientation left identity -
+  # TBD pending gripper tool-frame convention.
+  #
+  # pregrasp_offset increased (2026-09-01): reach-test diagnostic found the
+  # real grasp target is 100% reachable/collision-free in isolation (no
+  # infuser object present) - the 18.2% collision rate in the full scene
+  # was the infuser's own body blocking the approach. Added a vertical
+  # component too, not just more horizontal pull-back: this target sits
+  # only ~6cm above the table, close to this policy's documented history
+  # of clipping the table with its elbow near table height (see
+  # docs/ppo_baseline.md) - more headroom addresses both risk factors.
+  #
+  # z bumped 0.04 -> 0.15 (2026-09-01, Env B): Env B's infuser sits much
+  # farther out (~0.69-0.71m from the base). Isolated testing showed this
+  # is a genuine elevation-driven reach limit, not a horizontal-distance
+  # one - success jumped from 28% to 100% between z=0.05 and z=0.10, exact
+  # same pattern as the kettle's own elevation finding in Env A. Also
+  # plausibly clears the Env B kettle-collision issue (kettle sits along a
+  # similar bearing, closer in) by routing the approach higher over it.
+  grasp_pose_in_object_frame:
+    position_xyz: [0.0841, 0.0, 0.0572]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+  pregrasp_offset_in_grasp_frame:
+    position_xyz: [0.06, 0.0, 0.15]
+  descent_distance_m: 0.1616 # hypot(0.06, 0.15), straight-line pregrasp->grasp
+  gripper_close_command: null # TBD

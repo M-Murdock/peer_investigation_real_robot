@@ -41,6 +41,9 @@ offset around that default/home pose, so every episode starts from a
 slightly different configuration instead of always the exact same one.
 """
 
+from typing import Callable
+
+from mjlab.entity import EntityCfg
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -77,7 +80,6 @@ _TABLE_NAME = "table"
 # the table always blocked motion (real MuJoCo contact dynamics), but
 # without this termination that failure mode had no explicit learning
 # signal beyond "the goal is unreachable from here" (2026-08-25).
-_COLLISION_NAMES = _OBSTACLE_NAMES + (_TABLE_NAME,)
 _COMMAND_NAME = "reach_target"
 _SUCCESS_THRESHOLD = 0.03  # meters, runbook section 24.
 
@@ -97,7 +99,30 @@ def _collision_contact_sensor_cfg(body_name: str) -> ContactSensorCfg:
     )
 
 
-def get_reaching_env_cfg(num_envs: int = 1) -> ManagerBasedRlEnvCfg:
+def get_reaching_env_cfg(
+    num_envs: int = 1,
+    *,
+    scene_object_cfgs_fn: Callable[[], dict[str, EntityCfg]] = get_scene_object_cfgs,
+    obstacle_names: tuple[str, ...] = _OBSTACLE_NAMES,
+    table_name: str = _TABLE_NAME,
+    extra_collision_names: tuple[str, ...] = (),
+) -> ManagerBasedRlEnvCfg:
+    """`scene_object_cfgs_fn`/`obstacle_names`/`table_name`/
+    `extra_collision_names` let a different scene (e.g. tasks/tea_table)
+    reuse this exact env — same observation/action/reward/termination
+    definitions, per runbook v2 section 22.2's hard requirement not to
+    change those when adapting the checkpoint to a new scene — with only
+    the scene's entities and which of them count as collidable obstacles
+    swapped out. Defaults reproduce the original M2.1/M2.2 reaching task
+    unchanged, so existing callers (train_reaching.py, evaluate_reaching.py,
+    watch_training.py) are unaffected.
+
+    `extra_collision_names` is for entities that should hard-terminate on
+    contact but skip the dense obstacle_proximity_penalty shaping (e.g.
+    tea_table's arm_base_fixture, which is structurally more like the table
+    than a discrete container) - same treatment the table itself gets.
+    """
+    collision_names = obstacle_names + (table_name,) + extra_collision_names
     actor_terms = {
         "joint_pos": ObservationTermCfg(
             func=mdp.joint_pos_rel,
@@ -187,7 +212,7 @@ def get_reaching_env_cfg(num_envs: int = 1) -> ManagerBasedRlEnvCfg:
             func=obstacle_proximity_penalty,
             weight=-1.0,
             params={
-                "obstacle_names": _OBSTACLE_NAMES,
+                "obstacle_names": obstacle_names,
                 "std": 0.08,
                 "asset_cfg": _EE_SITE_CFG,
             },
@@ -206,7 +231,7 @@ def get_reaching_env_cfg(num_envs: int = 1) -> ManagerBasedRlEnvCfg:
             f"{name}_collision": TerminationTermCfg(
                 func=illegal_contact, params={"sensor_name": f"{name}_collision"}
             )
-            for name in _COLLISION_NAMES
+            for name in collision_names
         },
     }
 
@@ -214,8 +239,8 @@ def get_reaching_env_cfg(num_envs: int = 1) -> ManagerBasedRlEnvCfg:
         decimation=4,
         scene=SceneCfg(
             num_envs=num_envs,
-            entities={"robot": get_gen3_lite_robot_cfg(), **get_scene_object_cfgs()},
-            sensors=tuple(_collision_contact_sensor_cfg(n) for n in _COLLISION_NAMES),
+            entities={"robot": get_gen3_lite_robot_cfg(), **scene_object_cfgs_fn()},
+            sensors=tuple(_collision_contact_sensor_cfg(n) for n in collision_names),
         ),
         observations=observations,
         actions=actions,
