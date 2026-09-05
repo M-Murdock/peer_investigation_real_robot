@@ -20,7 +20,16 @@ Usage:
         mode:=inference_only target_xyz:="[0.35, 0.05, 0.28]"
     ros2 launch kinova_gen3_lite_rl_bridge rl_reach.launch.py \\
         mode:=live target_xyz:="[0.35, 0.05, 0.28]"
+
+    # Or target a tea-table object by name instead of raw coordinates —
+    # resolved via config/tea_table_objects.yaml + tea_table_grasps.yaml
+    # (object_id/env_id take priority over target_xyz when object_id is set):
+    ros2 launch kinova_gen3_lite_rl_bridge rl_reach.launch.py \\
+        mode:=inference_only object_id:=kettle env_id:=env_a
 """
+
+import json
+import subprocess
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
@@ -34,9 +43,35 @@ _DEFAULT_RL_PROJECT_DIR = '/home/mavis/ros2_ws/src/peer_investigation_real_robot
 _DEFAULT_CHECKPOINT_REL = 'checkpoints/2026-08-27_12-52-48/model_9999.pt'
 
 
+def _resolve_object_target(
+    uv_executable: str, rl_project_dir: str, env_id: str, object_id: str
+) -> list[float]:
+    """
+    Run scripts/print_pregrasp_target.py under `uv run` and return its result.
+
+    Returns the resolved [x, y, z] target — the grasp registry lives in the
+    uv (mjlab/scipy) environment, not this launch process's plain system
+    Python.
+    """
+    result = subprocess.run(
+        [
+            uv_executable, 'run', 'python', 'scripts/print_pregrasp_target.py',
+            '--env-id', env_id, '--object-id', object_id,
+        ],
+        cwd=rl_project_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f'print_pregrasp_target.py failed for env_id={env_id!r} '
+            f'object_id={object_id!r}:\n{result.stderr}'
+        )
+    return json.loads(result.stdout)['target_xyz']
+
+
 def _launch_setup(context, *args, **kwargs):
     mode = LaunchConfiguration('mode').perform(context)
-    target_xyz = yaml.safe_load(LaunchConfiguration('target_xyz').perform(context))
     rl_project_dir = LaunchConfiguration('rl_project_dir').perform(context)
     checkpoint_rel = LaunchConfiguration('checkpoint_rel').perform(context)
     uv_executable = LaunchConfiguration('uv_executable').perform(context)
@@ -46,6 +81,13 @@ def _launch_setup(context, *args, **kwargs):
     base_frame = LaunchConfiguration('base_frame').perform(context)
     ee_frame = LaunchConfiguration('ee_frame').perform(context)
     joint_trajectory_topic = LaunchConfiguration('joint_trajectory_topic').perform(context)
+
+    object_id = LaunchConfiguration('object_id').perform(context)
+    if object_id:
+        env_id = LaunchConfiguration('env_id').perform(context)
+        target_xyz = _resolve_object_target(uv_executable, rl_project_dir, env_id, object_id)
+    else:
+        target_xyz = yaml.safe_load(LaunchConfiguration('target_xyz').perform(context))
 
     policy_bridge = Node(
         package='kinova_gen3_lite_rl_bridge',
@@ -94,6 +136,17 @@ def generate_launch_description():
     declared_args = [
         DeclareLaunchArgument('mode', default_value='observe_only'),
         DeclareLaunchArgument('target_xyz', default_value='[0.3, 0.0, 0.3]'),
+        DeclareLaunchArgument(
+            'object_id', default_value='',
+            description='Tea-table object name (kettle/mug/infuser). If set, '
+                        'overrides target_xyz — resolved via env_id and the '
+                        'grasp registry instead.',
+        ),
+        DeclareLaunchArgument(
+            'env_id', default_value='env_a',
+            description='Which measured table layout object_id is resolved '
+                        'against (env_a or env_b). Ignored unless object_id is set.',
+        ),
         DeclareLaunchArgument('rl_project_dir', default_value=_DEFAULT_RL_PROJECT_DIR),
         DeclareLaunchArgument('checkpoint_rel', default_value=_DEFAULT_CHECKPOINT_REL),
         DeclareLaunchArgument('uv_executable', default_value='uv'),

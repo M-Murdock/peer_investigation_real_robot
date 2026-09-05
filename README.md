@@ -149,7 +149,8 @@ colcon test-result --verbose --test-result-base build/kinova_gen3_lite_rl_bridge
 
 ```bash
 # 1. Bring up the real (or fake) hardware driver separately, e.g.:
-ros2 launch kortex_bringup gen3_lite.launch.py use_fake_hardware:=true
+#    (robot_ip is required even for fake hardware — it's just never used)
+ros2 launch kortex_bringup gen3_lite.launch.py use_fake_hardware:=true robot_ip:=192.168.1.10
 
 # 2. Stage 1 — wiring only, no policy server, no motion:
 ros2 launch kinova_gen3_lite_rl_bridge rl_reach.launch.py \
@@ -168,7 +169,34 @@ ros2 launch kinova_gen3_lite_rl_bridge rl_reach.launch.py \
 `ros2 param set /policy_bridge_node <name> <value>`, so an operator can
 step through the staged rollout without relaunching. **Do not skip
 stages** — see the runbook (§33) and the project plan for the full
-staged-rollout checklist and why each step exists.
+staged-rollout checklist and why each step exists. Before switching a
+launch from `live` to any other target or re-launching after a fault,
+re-home the arm first (e.g. `ros2 run gen3-lite-ros2 joint_playback
+<home-waypoint-file>`, all-zero joints, a generous duration — a single
+5s point-to-point move across a large joint swing can itself exceed
+`joint_limits.yaml`'s velocity cap at the trajectory's peak spline
+velocity, ~1.875× the naive average, and trip a real Kinova joint fault).
+
+#### Targeting a tea-table object by name
+
+Instead of a raw `target_xyz`, `object_id`/`env_id` resolve a real
+pregrasp target from `config/tea_table_objects.yaml` +
+`tea_table_grasps.yaml` (via `scripts/print_pregrasp_target.py`, run
+under `uv` at launch time — this is launch-time-only resolution, not a
+runtime node parameter like `target_xyz` is):
+
+```bash
+ros2 launch kinova_gen3_lite_rl_bridge rl_reach.launch.py \
+    mode:=inference_only object_id:=kettle env_id:=env_a
+```
+
+`object_id` is `kettle`, `mug`, or `infuser`; `env_id` is `env_a` or
+`env_b` (the two measured table layouts). Note the object *positions* in
+`tea_table_objects.yaml` are real measurements, but the grasp *offset*
+relative to each object (`tea_table_grasps.yaml`) is still a placeholder
+tuned only against sim collision-testing — treat a resolved object target
+with the same staged caution as any new target, not as a validated grasp
+point.
 
 ### Why two Python environments, concretely
 
