@@ -1,0 +1,18 @@
+# Conservative defaults for the first live-motion trial (runbook §33 step 8:
+# "extremely small action scale / conservative limits"). These clamp the
+# *published command*, never the trained policy's own action_scale/gains —
+# see safety_clamp.py's docstring for why that distinction matters.
+#
+# max_step_rad ~0.01 rad/cycle at 10 Hz is ~0.1 rad/s, well under both the
+# hardware's 0.5 rad/s soft cap and the policy's observed peak actions.
+# Relax gradually per the verification plan's Stage 3, never past the
+# hardware's own soft cap.
+policy_bridge_node:
+  ros__parameters:
+    safety.max_step_rad: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+    safety.max_velocity_rad_s: [0.3, 0.3, 0.3, 0.3, 0.3, 0.3]
+    # Hard backstop = real URDF joint limits (kortex_description
+    # arms/gen3_lite/6dof/urdf/gen3_lite_macro.xacro) — this clamp sits in
+    # front of, and does not replace, the hardware's own limit enforcement.
+    safety.joint_lower_rad: [-2.68, -2.61, -2.61, -2.60, -2.53, -2.60]
+    safety.joint_upper_rad: [2.68, 2.61, 2.61, 2.60, 2.53, 2.60]

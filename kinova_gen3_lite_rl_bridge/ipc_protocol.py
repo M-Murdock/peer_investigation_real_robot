@@ -1,0 +1,83 @@
+"""
+Wire format between policy_bridge_node and scripts/policy_server.py.
+
+Shared between policy_bridge_node (ROS, Python 3.12) and
+scripts/policy_server.py (uv, Python 3.13) over a single persistent
+Unix-domain-socket connection.
+
+Deliberately stdlib-only (no rclpy, no torch) so this one file can be
+imported unmodified by both processes despite their disjoint dependency
+sets: as part of the kinova_gen3_lite_rl_bridge package on the ROS side,
+and via a sys.path insert pointing at this package's directory on the uv
+side (see scripts/policy_server.py) — there is exactly one copy of this
+file. Fixed-size struct packing, not JSON: OBS_DIM/ACTION_DIM are fixed at
+design time (they come from the trained checkpoint's observation/action
+space), so variable-length framing buys nothing but risk.
+"""
+
+import socket
+import struct
+
+OBS_DIM = 21
+ACTION_DIM = 6
+
+MAGIC = 0xB0
+
+MSG_PING = 0x02
+MSG_PONG = 0x82
+MSG_INFER_REQ = 0x01
+MSG_INFER_RESP = 0x81
+
+HEADER_FMT = '!BBI'  # magic(1) | msg_type(1) | seq(uint32)
+HEADER_SIZE = struct.calcsize(HEADER_FMT)
+
+OBS_FMT = f'!{OBS_DIM}f'
+OBS_SIZE = struct.calcsize(OBS_FMT)
+
+ACTION_FMT = f'!{ACTION_DIM}f'
+ACTION_SIZE = struct.calcsize(ACTION_FMT)
+
+
+class ProtocolError(Exception):
+    """Malformed header or payload on the IPC socket."""
+
+
+def pack_header(msg_type: int, seq: int) -> bytes:
+    return struct.pack(HEADER_FMT, MAGIC, msg_type, seq)
+
+
+def unpack_header(buf: bytes) -> tuple[int, int]:
+    """Return (msg_type, seq). Raise ProtocolError if magic doesn't match."""
+    magic, msg_type, seq = struct.unpack(HEADER_FMT, buf)
+    if magic != MAGIC:
+        raise ProtocolError(f'bad magic byte: {magic:#x}')
+    return msg_type, seq
+
+
+def pack_obs(obs) -> bytes:
+    return struct.pack(OBS_FMT, *obs)
+
+
+def unpack_obs(buf: bytes) -> tuple[float, ...]:
+    return struct.unpack(OBS_FMT, buf)
+
+
+def pack_action(action) -> bytes:
+    return struct.pack(ACTION_FMT, *action)
+
+
+def unpack_action(buf: bytes) -> tuple[float, ...]:
+    return struct.unpack(ACTION_FMT, buf)
+
+
+def recv_exact(conn: socket.socket, n: int) -> bytes:
+    """Read exactly n bytes or raise ProtocolError on EOF."""
+    chunks = []
+    remaining = n
+    while remaining > 0:
+        chunk = conn.recv(remaining)
+        if not chunk:
+            raise ProtocolError(f'connection closed with {remaining} bytes still expected')
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b''.join(chunks)

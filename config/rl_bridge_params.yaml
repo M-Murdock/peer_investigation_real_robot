@@ -1,0 +1,13 @@
+# Frame/topic/rate defaults for policy_bridge_node. target_xyz here is a
+# placeholder — override per trial via the launch file's target_xyz arg or
+# `ros2 param set /policy_bridge_node target_xyz [...]`.
+policy_bridge_node:
+  ros__parameters:
+    base_frame: base_link
+    # tool_frame, not end_effector_link — matches MuJoCo's ee_site
+    # (pos="0 0 0.130" in end_effector_link), per docs/ros_reference_model.md.
+    ee_frame: tool_frame
+    target_xyz: [0.3, 0.0, 0.3]
+    control_rate_hz: 10.0
+    policy_socket_path: /tmp/kinova_rl_policy.sock
+    joint_trajectory_topic: /joint_trajectory_controller/joint_trajectory
