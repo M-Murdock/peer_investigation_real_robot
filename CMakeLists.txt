@@ -17,16 +17,23 @@ install(PROGRAMS
   RENAME policy_bridge_node
 )
 
+install(PROGRAMS
+  ${PROJECT_NAME}/shared_autonomy_node.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME shared_autonomy_node
+)
+
 install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME}
 )
 
 # config/ also holds the uv project's tea_table_*.yaml (unrelated to this
-# package) — install our two files explicitly rather than the whole directory.
+# package) — install our files explicitly rather than the whole directory.
 install(FILES
   config/safety_limits.yaml
   config/rl_bridge_params.yaml
+  config/shared_autonomy.yaml
   DESTINATION share/${PROJECT_NAME}/config
 )
 
@@ -53,6 +60,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_observation_builder test/test_observation_builder.py)
   ament_add_pytest_test(test_safety_clamp test/test_safety_clamp.py)
   ament_add_pytest_test(test_ipc_roundtrip test/test_ipc_roundtrip.py)
+  ament_add_pytest_test(test_goal_belief test/test_goal_belief.py)
+  ament_add_pytest_test(test_joy_joint_jog test/test_joy_joint_jog.py)
 endif()
 
 ament_package()

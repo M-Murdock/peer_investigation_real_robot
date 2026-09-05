@@ -198,6 +198,48 @@ tuned only against sim collision-testing — treat a resolved object target
 with the same staged caution as any new target, not as a validated grasp
 point.
 
+### Shared autonomy (`shared_autonomy_node`)
+
+A sibling to `policy_bridge_node` — not a replacement — that maintains a
+belief over *all* of one env's tea-table objects at once (instead of one
+fixed target) by comparing a human's live joystick input against what
+each object's policy would do, then blends the assistance action with the
+human's input. Modeled on
+[`ada_assistance_policy`](https://github.com/personalrobotics/ada_assistance_policy),
+adapted for a trained RL policy instead of that project's analytic Huber
+cost function — see the project plan's "Milestone 2" section for the full
+algorithm and why it works in joint-delta space rather than Cartesian
+twist.
+
+**Requires a joystick publishing `/joy`** (e.g. `ros2 run joy joy_node`)
+**and must not run alongside `gen3-lite-ros2/joy_teleop.py`** — that tool
+drives `twist_controller`, this node drives `joint_trajectory_controller`,
+and ros2_control only runs one of those at a time. This node reads `/joy`
+directly itself.
+
+```bash
+ros2 launch kinova_gen3_lite_rl_bridge shared_autonomy.launch.py \
+    mode:=observe_only start_policy_server:=false   # Stage 1: wiring only
+
+ros2 launch kinova_gen3_lite_rl_bridge shared_autonomy.launch.py \
+    mode:=inference_only env_id:=env_a               # Stage 2: watch belief shift, no motion
+
+ros2 launch kinova_gen3_lite_rl_bridge shared_autonomy.launch.py \
+    mode:=live env_id:=env_a                         # Stage 3: real motion, e-stop in hand
+```
+
+Only the left/right sticks jog joints 1–4 directly (`jog_scale_rad_s`,
+default 0.3 rad/s); joints 5/6 get no direct joystick input in this first
+version (trigger axes are single-ended on most controllers, not
+well-suited to bidirectional jogging) — their motion comes entirely from
+the blended policy suggestion. `temperature` (default 3.0) controls how
+many consistent cycles of jogging it takes to concentrate belief on the
+matching goal — evidence is cosine similarity between the human's jog
+direction and each goal's policy direction (direction-only, deliberately
+not raw distance: an undertrained policy's action magnitude varies goal
+to goal for reasons unrelated to direction, and would otherwise swamp
+whether the directions actually agree).
+
 ### Why two Python environments, concretely
 
 - `policy_bridge_node` and everything under `kinova_gen3_lite_rl_bridge/`

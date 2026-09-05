@@ -72,3 +72,33 @@ integrator: parent has 0 (default), child has 3, keeping parent value
 WARNING Sat Sep  5 16:28:12 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
 integrator: parent has 0 (default), child has 3, keeping parent value
 
+WARNING Sat Sep  5 16:44:37 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sat Sep  5 16:44:42 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sat Sep  5 16:46:04 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sat Sep  5 16:46:09 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sat Sep  5 16:59:22 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sat Sep  5 16:59:29 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sat Sep  5 17:03:22 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sat Sep  5 17:06:38 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sat Sep  5 17:06:43 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sat Sep  5 17:07:36 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+

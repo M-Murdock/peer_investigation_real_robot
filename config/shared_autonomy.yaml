@@ -1,0 +1,16 @@
+# Defaults for shared_autonomy_node. Same conservative safety-clamp
+# defaults as safety_limits.yaml (see that file's comments) — the clamp is
+# unchanged by shared autonomy, it just receives a blended pre-clamp
+# action instead of one policy's raw action.
+shared_autonomy_node:
+  ros__parameters:
+    # Evidence is cosine similarity (range [-1, 1]) between the human's
+    # jog direction and each goal's policy direction, so temperature
+    # controls how many consistent cycles it takes to build confidence,
+    # not the magnitude of a single-step comparison.
+    temperature: 3.0
+    jog_scale_rad_s: 0.3
+    safety.max_step_rad: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+    safety.max_velocity_rad_s: [0.3, 0.3, 0.3, 0.3, 0.3, 0.3]
+    safety.joint_lower_rad: [-2.68, -2.61, -2.61, -2.60, -2.53, -2.60]
+    safety.joint_upper_rad: [2.68, 2.61, 2.61, 2.60, 2.53, 2.60]
