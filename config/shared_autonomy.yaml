@@ -15,6 +15,9 @@ shared_autonomy_node:
     jog_mode: cartesian
     jog_scale_rad_s: 0.3
     jog_scale_m_s: 0.15
+    # Wrist rotation (LB/RB, held) is independent of jog_mode -- added on
+    # top of whichever translation delta is active.
+    wrist_jog_scale_rad_s: 0.3
     # Each goal's raw suggested delta is normalized to a unit direction
     # scaled to this magnitude before belief-weighting and summing with
     # the human's jog input — otherwise a goal delta whose raw magnitude

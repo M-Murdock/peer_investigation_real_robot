@@ -105,6 +105,7 @@ def _launch_setup(context, *args, **kwargs):
     jog_mode = LaunchConfiguration('jog_mode').perform(context)
     jog_scale_rad_s = float(LaunchConfiguration('jog_scale_rad_s').perform(context))
     jog_scale_m_s = float(LaunchConfiguration('jog_scale_m_s').perform(context))
+    wrist_jog_scale_rad_s = float(LaunchConfiguration('wrist_jog_scale_rad_s').perform(context))
     assist_step_rad = float(LaunchConfiguration('assist_step_rad').perform(context))
     k_p = LaunchConfiguration('k_p').perform(context)
     damping_lambda = LaunchConfiguration('damping_lambda').perform(context)
@@ -135,6 +136,7 @@ def _launch_setup(context, *args, **kwargs):
                 'jog_mode': jog_mode,
                 'jog_scale_rad_s': jog_scale_rad_s,
                 'jog_scale_m_s': jog_scale_m_s,
+                'wrist_jog_scale_rad_s': wrist_jog_scale_rad_s,
                 'assist_step_rad': assist_step_rad,
             },
         ],
@@ -214,6 +216,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument('jog_scale_rad_s', default_value='0.3'),
         DeclareLaunchArgument('jog_scale_m_s', default_value='0.15'),
+        DeclareLaunchArgument('wrist_jog_scale_rad_s', default_value='0.3'),
         DeclareLaunchArgument(
             'assist_step_rad', default_value='0.03',
             description='Per-cycle magnitude each goal direction is normalized to before '

@@ -286,6 +286,17 @@ Edge-triggered (one toggle per physical press, not per cycle held down)
 and gated on `mode:=live` like everything else this node actuates — a
 press in `observe_only`/`inference_only` is logged and ignored.
 
+**Wrist rotation**: hold `LB`/`RB` to continuously rotate the wrist
+(`joint_6`) CCW/CW (`wrist_jog_scale_rad_s`, default 0.3 rad/s) — the
+gripper is rigidly mounted, so this is what "rotating the gripper" means.
+Independent of `jog_mode`: works at the same time as either Cartesian or
+joint-space stick jogging (translate with the sticks, rotate the wrist
+with the shoulder buttons simultaneously). Holding both LB and RB cancels
+to no rotation. Unlike the gripper toggle, this has no separate actuation
+of its own — it's just another component of `human_delta`, so it's
+already safety-clamped and respects `mode` the same way the rest of the
+blended command does.
+
 ### Why two Python environments, concretely
 
 - `policy_bridge_node` and everything under `kinova_gen3_lite_rl_bridge/`

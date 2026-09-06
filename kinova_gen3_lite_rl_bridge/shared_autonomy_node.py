@@ -50,6 +50,14 @@ gen3-lite-ros2/src/joy_teleop.py already uses for its own LT/RT triggers,
 just edge-triggered off a button instead. Gated on mode='live' like
 everything else this node actuates; a press in observe_only/inference_only
 is logged and ignored, not queued.
+
+Holding LB/RB continuously rotates the wrist (joint_6 — the gripper is
+rigidly mounted, so "rotating the gripper" means rotating this joint) via
+wrist_jog.py. This is added into human_delta directly, independent of
+jog_mode — works alongside either joint or Cartesian jogging at the same
+time — and is unaffected by mode (it's just another joint-space delta
+component, safety-clamped exactly like the rest of human_delta; it has no
+separate actuation of its own the way the gripper toggle does).
 """
 
 from control_msgs.action import GripperCommand
@@ -71,6 +79,7 @@ from kinova_gen3_lite_rl_bridge.observation_builder import (
 from kinova_gen3_lite_rl_bridge.policy_client import PolicyClient
 from kinova_gen3_lite_rl_bridge.potential_field_client import PotentialFieldClient
 from kinova_gen3_lite_rl_bridge.safety_clamp import SafetyClamp, SafetyLimits
+from kinova_gen3_lite_rl_bridge.wrist_jog import buttons_to_wrist_delta, JOINT6_INDEX
 import numpy as np
 import rclpy
 from rclpy.action import ActionClient
@@ -117,6 +126,7 @@ class SharedAutonomyNode(Node):
         self.declare_parameter('jog_mode', 'cartesian')
         self.declare_parameter('jog_scale_rad_s', 0.3)
         self.declare_parameter('jog_scale_m_s', 0.15)
+        self.declare_parameter('wrist_jog_scale_rad_s', 0.3)
         self.declare_parameter('assist_step_rad', 0.03)
         self.declare_parameter(
             'safety.max_step_rad', [0.03, 0.03, 0.03, 0.03, 0.03, 0.03]
@@ -164,6 +174,7 @@ class SharedAutonomyNode(Node):
         self._joint_trajectory_topic = self.get_parameter('joint_trajectory_topic').value
         self._jog_scale_rad_s = self.get_parameter('jog_scale_rad_s').value
         self._jog_scale_m_s = self.get_parameter('jog_scale_m_s').value
+        self._wrist_jog_scale_rad_s = self.get_parameter('wrist_jog_scale_rad_s').value
         self._assist_step_rad = self.get_parameter('assist_step_rad').value
 
         temperature = self.get_parameter('temperature').value
@@ -429,18 +440,28 @@ class SharedAutonomyNode(Node):
     def _compute_human_delta(self, joint_pos):
         """Return this cycle's human joint-space delta, or None (already logged) on failure."""
         if self._jog_mode == 'joint':
-            return axes_to_joint_delta(
+            human_delta = axes_to_joint_delta(
                 self._latest_joy.axes, self._jog_scale_rad_s, self._control_dt
             )
-
-        cartesian_delta = axes_to_cartesian_delta(
-            self._latest_joy.axes, self._jog_scale_m_s, self._control_dt
-        )
-        human_delta = self._potential_field_client.compute_jog_delta(joint_pos, cartesian_delta)
-        if human_delta is None:
-            self.get_logger().warn(
-                'cartesian jog conversion failed, skipping cycle', throttle_duration_sec=3.0
+        else:
+            cartesian_delta = axes_to_cartesian_delta(
+                self._latest_joy.axes, self._jog_scale_m_s, self._control_dt
             )
+            human_delta = self._potential_field_client.compute_jog_delta(
+                joint_pos, cartesian_delta
+            )
+            if human_delta is None:
+                self.get_logger().warn(
+                    'cartesian jog conversion failed, skipping cycle', throttle_duration_sec=3.0
+                )
+                return None
+
+        # Wrist rotation (LB/RB) is independent of jog_mode — added on top
+        # of whichever translation delta was just computed.
+        wrist_delta = buttons_to_wrist_delta(
+            self._latest_joy.buttons, self._wrist_jog_scale_rad_s, self._control_dt
+        )
+        human_delta[JOINT6_INDEX] += wrist_delta
         return human_delta
 
     def _publish_trajectory(self, target_q: np.ndarray):
