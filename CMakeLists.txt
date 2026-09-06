@@ -79,6 +79,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_gripper_toggle test/test_gripper_toggle.py)
   ament_add_pytest_test(test_wrist_jog test/test_wrist_jog.py)
   ament_add_pytest_test(test_study_session_validation test/test_study_session_validation.py)
+  ament_add_pytest_test(test_study_control_panel_paths test/test_study_control_panel_paths.py)
 endif()
 
 ament_package()

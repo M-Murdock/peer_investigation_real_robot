@@ -326,18 +326,49 @@ env_id:=<selected>` for Start Study. **Does not start `kortex_bringup`**
 — hardware bringup stays a separate manual step, same as every other
 launch file in this project.
 
-Starting a study also starts `ros2 bag record` (topics: `/joint_states`,
-`/joy`, `/joint_trajectory_controller/joint_trajectory` — arm state,
-human input, and the actual blended commands sent) into
+Starting a study creates one session directory,
 `~/kinova_study_sessions/<user_id>_<timestamp>/`, and appends a line to
-`sessions.csv` there for human-readable bookkeeping alongside the bag.
-Stop Study sends SIGINT to both the launch and the bag-record process
-(lets the bag finalize cleanly), falling back to terminate/kill if either
-doesn't exit within 10s.
+`sessions.csv` there for human-readable bookkeeping. Inside it, two
+recordings start together:
+- `ros2 bag record` (topics: `/joint_states`, `/joy`,
+  `/joint_trajectory_controller/joint_trajectory` — arm state, human
+  input, and the actual blended commands sent) into that session
+  directory's `rosbag/` subdirectory.
+- `pw-record` into that session directory's `audio.wav` — same intent
+  as `investigating_peer_real_robot/session_gui.py`'s (on `main`) audio
+  recording, but via PipeWire's own tool rather than raw `arecord -D
+  ...`: on a PipeWire-managed system (this one included), PipeWire holds
+  the ALSA hardware nodes itself, so a direct `arecord -D
+  hw:.../plughw:.../sysdefault:...` open collides with "Device or
+  resource busy" for anything but PipeWire's own `default` alias — this
+  was hit and confirmed empirically. `pw-record --target <node.name>`
+  talks to PipeWire's graph instead of grabbing hardware directly, so it
+  doesn't have that problem. Best-effort: if `pw-record` itself can't be
+  launched, the study still starts (the panel surfaces the failure via
+  `/status`'s `audio_start_error` rather than blocking arm control or the
+  bag on a missing microphone) — but note a *bad target name* doesn't
+  fail loudly this way (pw-record degrades to recording silence rather
+  than exiting), so `pw-record`'s own stderr is kept in
+  `<session_dir>/audio_stderr.log` for after-the-fact debugging instead
+  of being discarded.
+
+Stop Study sends SIGINT to the launch, the bag-record process, and the
+audio-record process (lets the bag/audio files finalize cleanly), falling
+back to terminate/kill if any doesn't exit within 10s.
+
+The page includes an audio-device dropdown, populated from `GET
+/audio_devices` (parses `pw-dump`'s real `Audio/Source` nodes — sound
+card and USB mic included, not just `default`) and preselected to the
+server's `--audio-device` default; the operator can override it per
+session without a restart.
 
 Useful flags: `--http-port` (default 8080), `--sessions-dir` (default
 `~/kinova_study_sessions`), `--rl-project-dir` (default this checkout's
-path — used to locate `config/home_pose.txt`).
+path — used to locate `config/home_pose.txt`), `--audio-device` (default
+`default`, a PipeWire node.name, or `default` meaning "let PipeWire
+auto-pick"; shown as the dropdown's preselected value). Requires
+`pw-record`/`pw-dump` (Debian/Ubuntu: `pipewire-bin`, already declared as
+an `exec_depend`).
 
 ### Why two Python environments, concretely
 
