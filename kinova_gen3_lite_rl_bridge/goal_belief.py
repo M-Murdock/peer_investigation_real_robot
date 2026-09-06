@@ -114,9 +114,29 @@ def blend_action(
     policy_deltas: dict,
     probs: np.ndarray,
     goal_names: Sequence[str],
+    assist_step_rad: float,
 ) -> np.ndarray:
-    """Blend the belief-weighted policy deltas with the human's own delta."""
-    weighted = np.zeros_like(human_delta)
+    """
+    Blend the belief-weighted goal directions with the human's own delta.
+
+    Each goal's raw delta is normalized to a unit direction, scaled to
+    assist_step_rad, before weighting and summing — not used raw. A raw
+    sum lets whichever goal's delta has the largest magnitude dominate
+    the blend regardless of belief, and that magnitude can be far larger
+    than the human's deliberately small, safety-scaled jog input (a
+    potential field's raw delta grows with distance-to-goal; an
+    undertrained RL policy's raw action magnitude is similarly
+    uncalibrated) — discovered via real hardware testing as "the
+    joystick doesn't seem to do anything," because after the final
+    safety clamp, the dominant unnormalized goal direction alone already
+    saturated the per-cycle step, swamping the human's contribution.
+    Normalizing first keeps the human's steering meaningfully influential
+    regardless of how far away any goal currently is.
+    """
+    weighted_direction = np.zeros_like(human_delta)
     for prob, name in zip(probs, goal_names):
-        weighted = weighted + prob * policy_deltas[name]
-    return weighted + human_delta
+        delta = policy_deltas[name]
+        norm = float(np.linalg.norm(delta))
+        direction = delta / norm if norm > _MIN_VECTOR_NORM else delta
+        weighted_direction = weighted_direction + prob * direction
+    return weighted_direction * assist_step_rad + human_delta

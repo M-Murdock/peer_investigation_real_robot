@@ -203,13 +203,11 @@ point.
 A sibling to `policy_bridge_node` — not a replacement — that maintains a
 belief over *all* of one env's tea-table objects at once (instead of one
 fixed target) by comparing a human's live joystick input against what
-each object's policy would do, then blends the assistance action with the
-human's input. Modeled on
-[`ada_assistance_policy`](https://github.com/personalrobotics/ada_assistance_policy),
-adapted for a trained RL policy instead of that project's analytic Huber
-cost function — see the project plan's "Milestone 2" section for the full
-algorithm and why it works in joint-delta space rather than Cartesian
-twist.
+each goal's action source would do, then blends the assistance action
+with the human's input. Modeled on
+[`ada_assistance_policy`](https://github.com/personalrobotics/ada_assistance_policy)
+— see the project plan's "Milestone 2" section for the full algorithm and
+why it works in joint-delta space rather than Cartesian twist.
 
 **Requires a joystick publishing `/joy`** (e.g. `ros2 run joy joy_node`)
 **and must not run alongside `gen3-lite-ros2/joy_teleop.py`** — that tool
@@ -217,9 +215,24 @@ drives `twist_controller`, this node drives `joint_trajectory_controller`,
 and ros2_control only runs one of those at a time. This node reads `/joy`
 directly itself.
 
+Each goal's suggested action comes from one of two interchangeable
+backends, chosen by `action_source`:
+- **`potential_field`** (default) — an analytic Jacobian-based attractor
+  toward each goal (`src/kinova_mjlab_reaching/deploy/potential_field.py`,
+  served by `scripts/potential_field_server.py`, using `kinpy` — the same
+  library already validated for FK in `docs/fk_validation.md`). No
+  trained weights, no checkpoint-loading wait, and — unlike the RL
+  policy — well-defined from *any* starting joint configuration, not just
+  ones near what a checkpoint happened to be trained on. See the project
+  plan's "Milestone 3" section for the full math (damped least-squares
+  pseudoinverse of the position-only Jacobian, robust near singularities).
+- **`policy`** — the trained RL policy from Milestone 2, unmodified and
+  still fully available; pass `action_source:=policy
+  start_policy_server:=true start_potential_field_server:=false`.
+
 ```bash
 ros2 launch kinova_gen3_lite_rl_bridge shared_autonomy.launch.py \
-    mode:=observe_only start_policy_server:=false   # Stage 1: wiring only
+    mode:=observe_only start_potential_field_server:=false   # Stage 1: wiring only
 
 ros2 launch kinova_gen3_lite_rl_bridge shared_autonomy.launch.py \
     mode:=inference_only env_id:=env_a               # Stage 2: watch belief shift, no motion
@@ -232,13 +245,16 @@ Only the left/right sticks jog joints 1–4 directly (`jog_scale_rad_s`,
 default 0.3 rad/s); joints 5/6 get no direct joystick input in this first
 version (trigger axes are single-ended on most controllers, not
 well-suited to bidirectional jogging) — their motion comes entirely from
-the blended policy suggestion. `temperature` (default 3.0) controls how
-many consistent cycles of jogging it takes to concentrate belief on the
+the blended suggestion. `temperature` (default 3.0) controls how many
+consistent cycles of jogging it takes to concentrate belief on the
 matching goal — evidence is cosine similarity between the human's jog
-direction and each goal's policy direction (direction-only, deliberately
-not raw distance: an undertrained policy's action magnitude varies goal
-to goal for reasons unrelated to direction, and would otherwise swamp
-whether the directions actually agree).
+direction and each goal's suggested direction (direction-only,
+deliberately not raw distance — an undertrained RL policy's action
+magnitude in particular varies goal to goal for reasons unrelated to
+direction, and would otherwise swamp whether the directions actually
+agree). `k_p` (default 2.0) and `damping_lambda` (default 0.05) tune the
+potential field's gain and singularity-robustness, only used when
+`action_source:=potential_field`.
 
 ### Why two Python environments, concretely
 

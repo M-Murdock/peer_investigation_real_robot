@@ -10,6 +10,16 @@ shared_autonomy_node:
     # not the magnitude of a single-step comparison.
     temperature: 3.0
     jog_scale_rad_s: 0.3
+    # Each goal's raw suggested delta is normalized to a unit direction
+    # scaled to this magnitude before belief-weighting and summing with
+    # the human's jog input — otherwise a goal delta whose raw magnitude
+    # happens to be much larger than the human's deliberately small jog
+    # (e.g. a potential field far from its target) dominates the blend
+    # regardless of belief, swamping the human's steering entirely once
+    # the final safety clamp saturates. Matches safety.max_step_rad by
+    # default so pure-autonomy motion (stick centered) already sits at
+    # the safety-clamped rate.
+    assist_step_rad: 0.01
     safety.max_step_rad: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
     safety.max_velocity_rad_s: [0.3, 0.3, 0.3, 0.3, 0.3, 0.3]
     safety.joint_lower_rad: [-2.68, -2.61, -2.61, -2.60, -2.53, -2.60]

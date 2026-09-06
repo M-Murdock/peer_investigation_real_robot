@@ -97,6 +97,8 @@ def test_reset_returns_to_uniform():
 
 
 def test_blend_action_weights_by_probability_and_adds_human_delta():
+    # Already-unit-length deltas, so normalization is a no-op here — this
+    # test isolates the probability-weighting behavior.
     human_delta = np.array([0.01, 0.0, 0.0, 0.0, 0.0, 0.0])
     deltas = _policy_deltas(
         np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
@@ -104,8 +106,49 @@ def test_blend_action_weights_by_probability_and_adds_human_delta():
         np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
     )
     probs = np.array([0.5, 0.3, 0.2])
+    assist_step_rad = 0.02
 
-    blended = blend_action(human_delta, deltas, probs, GOAL_NAMES)
+    blended = blend_action(human_delta, deltas, probs, GOAL_NAMES, assist_step_rad)
 
-    expected = 0.5 * deltas['kettle'] + 0.3 * deltas['mug'] + 0.2 * deltas['infuser'] + human_delta
+    expected_direction = 0.5 * deltas['kettle'] + 0.3 * deltas['mug'] + 0.2 * deltas['infuser']
+    expected = expected_direction * assist_step_rad + human_delta
     np.testing.assert_allclose(blended, expected)
+
+
+def test_blend_action_is_magnitude_invariant():
+    # Regression test for the real bug found during hardware testing:
+    # "the joystick doesn't seem to do anything." A goal delta with a huge
+    # raw magnitude must not dominate the blend more than an equally-
+    # confident goal with a small raw magnitude — both get normalized to
+    # the same assist_step_rad before weighting.
+    human_delta = np.zeros(6)
+    small_deltas = _policy_deltas(
+        np.array([0.01, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        np.array([0.0, 0.01, 0.0, 0.0, 0.0, 0.0]),
+        np.array([0.0, 0.0, 0.01, 0.0, 0.0, 0.0]),
+    )
+    huge_deltas = _policy_deltas(
+        np.array([10.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        np.array([0.0, 10.0, 0.0, 0.0, 0.0, 0.0]),
+        np.array([0.0, 0.0, 10.0, 0.0, 0.0, 0.0]),
+    )
+    probs = np.array([0.5, 0.3, 0.2])
+
+    blended_small = blend_action(human_delta, small_deltas, probs, GOAL_NAMES, 0.02)
+    blended_huge = blend_action(human_delta, huge_deltas, probs, GOAL_NAMES, 0.02)
+
+    np.testing.assert_allclose(blended_small, blended_huge)
+
+
+def test_blend_action_scales_with_assist_step_rad():
+    human_delta = np.zeros(6)
+    deltas = _policy_deltas(
+        np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0]),
+        np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
+    )
+    probs = np.array([1.0, 0.0, 0.0])
+
+    blended = blend_action(human_delta, deltas, probs, GOAL_NAMES, assist_step_rad=0.05)
+
+    np.testing.assert_allclose(blended, [0.05, 0.0, 0.0, 0.0, 0.0, 0.0])

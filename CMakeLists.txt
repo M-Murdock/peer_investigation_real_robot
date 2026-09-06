@@ -62,6 +62,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_ipc_roundtrip test/test_ipc_roundtrip.py)
   ament_add_pytest_test(test_goal_belief test/test_goal_belief.py)
   ament_add_pytest_test(test_joy_joint_jog test/test_joy_joint_jog.py)
+  ament_add_pytest_test(test_potential_field_math test/test_potential_field_math.py)
 endif()
 
 ament_package()

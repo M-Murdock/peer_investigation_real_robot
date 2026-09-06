@@ -14,17 +14,23 @@ action with the human's own input via goal_belief.py before publishing.
 Same three staged-rollout modes as policy_bridge_node, for the same
 safety reasons:
 
-    observe_only     builds each goal's observation, logs them, never
-                      calls the policy server, never publishes.
-    inference_only    also runs inference per goal, updates goal belief,
-                      logs (policy_deltas, probs, blended_delta), never
-                      publishes.
+    observe_only     validates joint-state/TF wiring, logs, never calls
+                      either backend, never publishes.
+    inference_only    also computes per-goal deltas and updates goal
+                      belief, logs (goal_deltas, probs, blended_delta),
+                      never publishes.
     live              publishes the safety-clamped blended command.
 
-See the project plan's "Milestone 2: max-entropy shared autonomy" section
-for the full algorithm rationale (why joint-space, not Cartesian; why an
-action-alignment heuristic instead of Javdani's original analytic-cost
-Q-values).
+Each goal's suggested joint delta can come from either of two
+interchangeable backends, selected by the `action_source` parameter:
+`policy` (the trained RL policy, via policy_client.py — unmodified from
+Milestone 2) or `potential_field` (an analytic Jacobian-based attractor,
+via potential_field_client.py — Milestone 3, for when the policy is
+undertrained/doesn't generalize from arbitrary starting configurations).
+Both produce the same shape of per-goal joint delta, so everything
+downstream — GoalBelief, blend_action, SafetyClamp — is identical either
+way. See the project plan's "Milestone 2" and "Milestone 3" sections for
+the full rationale.
 """
 
 from kinova_gen3_lite_rl_bridge.goal_belief import blend_action, GoalBelief
@@ -36,6 +42,7 @@ from kinova_gen3_lite_rl_bridge.observation_builder import (
     extract_arm_state,
 )
 from kinova_gen3_lite_rl_bridge.policy_client import PolicyClient
+from kinova_gen3_lite_rl_bridge.potential_field_client import PotentialFieldClient
 from kinova_gen3_lite_rl_bridge.safety_clamp import SafetyClamp, SafetyLimits
 import numpy as np
 import rclpy
@@ -53,6 +60,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 
 _VALID_MODES = ('observe_only', 'inference_only', 'live')
+_VALID_ACTION_SOURCES = ('policy', 'potential_field')
 
 
 class SharedAutonomyNode(Node):
@@ -60,6 +68,7 @@ class SharedAutonomyNode(Node):
         super().__init__('shared_autonomy_node')
 
         self.declare_parameter('mode', 'observe_only')
+        self.declare_parameter('action_source', 'potential_field')
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('ee_frame', 'tool_frame')
         self.declare_parameter('goal_names', [''])
@@ -67,10 +76,14 @@ class SharedAutonomyNode(Node):
         self.declare_parameter('control_rate_hz', 10.0)
         self.declare_parameter('policy_socket_path', '/tmp/kinova_rl_policy.sock')
         self.declare_parameter(
+            'potential_field_socket_path', '/tmp/kinova_potential_field.sock'
+        )
+        self.declare_parameter(
             'joint_trajectory_topic', '/joint_trajectory_controller/joint_trajectory'
         )
         self.declare_parameter('temperature', 3.0)
         self.declare_parameter('jog_scale_rad_s', 0.3)
+        self.declare_parameter('assist_step_rad', 0.01)
         self.declare_parameter(
             'safety.max_step_rad', [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
         )
@@ -85,6 +98,12 @@ class SharedAutonomyNode(Node):
         )
 
         self._mode = self.get_parameter('mode').value
+        self._action_source = self.get_parameter('action_source').value
+        if self._action_source not in _VALID_ACTION_SOURCES:
+            raise ValueError(
+                f'action_source must be one of {_VALID_ACTION_SOURCES}, '
+                f'got {self._action_source!r}'
+            )
         self._base_frame = self.get_parameter('base_frame').value
         self._ee_frame = self.get_parameter('ee_frame').value
 
@@ -105,6 +124,7 @@ class SharedAutonomyNode(Node):
         self._control_dt = 1.0 / control_rate_hz
         self._joint_trajectory_topic = self.get_parameter('joint_trajectory_topic').value
         self._jog_scale_rad_s = self.get_parameter('jog_scale_rad_s').value
+        self._assist_step_rad = self.get_parameter('assist_step_rad').value
 
         temperature = self.get_parameter('temperature').value
         self._goal_belief = GoalBelief(self._goal_names, temperature=temperature)
@@ -121,8 +141,16 @@ class SharedAutonomyNode(Node):
             control_dt=self._control_dt,
         )
 
-        socket_path = self.get_parameter('policy_socket_path').value
-        self._policy_client = PolicyClient(socket_path, logger=self.get_logger())
+        # Both clients are constructed regardless of action_source (cheap —
+        # neither connects until first used) so a future runtime-switchable
+        # action_source wouldn't need restructuring; only the active one is
+        # readiness-checked and called.
+        policy_socket_path = self.get_parameter('policy_socket_path').value
+        self._policy_client = PolicyClient(policy_socket_path, logger=self.get_logger())
+        field_socket_path = self.get_parameter('potential_field_socket_path').value
+        self._potential_field_client = PotentialFieldClient(
+            field_socket_path, logger=self.get_logger()
+        )
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -140,25 +168,33 @@ class SharedAutonomyNode(Node):
         self.create_subscription(Joy, '/joy', self._on_joy, 10)
         self.create_timer(self._control_dt, self._control_cycle)
 
+        self._action_source_ready = False
         if self._mode != 'observe_only':
-            self._policy_ready = False
-            self._policy_check_timer = self.create_timer(1.0, self._check_policy_ready)
-        else:
-            self._policy_ready = False
+            self._action_source_check_timer = self.create_timer(
+                1.0, self._check_action_source_ready
+            )
 
         self.get_logger().info(
             f'shared_autonomy_node started: mode={self._mode}, '
+            f'action_source={self._action_source}, '
             f'goals={self._goal_names}, rate={control_rate_hz}Hz'
         )
 
-    # ── Policy server readiness (PING/PONG handshake) ────────────────────
-    def _check_policy_ready(self):
-        if self._policy_client.ping():
-            self._policy_ready = True
-            self._policy_check_timer.cancel()
-            self.get_logger().info('policy server ready (PING/PONG ok)')
+    # ── Backend server readiness (PING/PONG handshake) ───────────────────
+    def _check_action_source_ready(self):
+        client = (
+            self._policy_client
+            if self._action_source == 'policy'
+            else self._potential_field_client
+        )
+        if client.ping():
+            self._action_source_ready = True
+            self._action_source_check_timer.cancel()
+            self.get_logger().info(f'{self._action_source} server ready (PING/PONG ok)')
         else:
-            self.get_logger().warn('waiting for policy server...', throttle_duration_sec=3.0)
+            self.get_logger().warn(
+                f'waiting for {self._action_source} server...', throttle_duration_sec=3.0
+            )
 
     # ── State caching ─────────────────────────────────────────────────────
     def _on_joint_state(self, msg: JointState):
@@ -208,40 +244,26 @@ class SharedAutonomyNode(Node):
             [tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z]
         )
 
-        observations = {
-            name: build_observation(
-                joint_pos, joint_vel, target, ee_pos_base, self._last_action[name]
-            )
-            for name, target in self._goal_targets.items()
-        }
-
         if self._mode == 'observe_only':
-            obs_summary = {name: obs.tolist() for name, obs in observations.items()}
-            self.get_logger().info(f'observations={obs_summary}', throttle_duration_sec=1.0)
+            self._log_observe_only(joint_pos, joint_vel, ee_pos_base)
             return
 
-        if not self._policy_ready:
+        if not self._action_source_ready:
             return
 
-        policy_deltas = {}
-        for name, obs in observations.items():
-            raw_action = self._policy_client.infer(obs)
-            if raw_action is None:
-                self.get_logger().warn(
-                    f'policy inference failed for goal {name!r}, skipping cycle',
-                    throttle_duration_sec=3.0,
-                )
-                return
-            self._last_action[name] = raw_action
-            policy_deltas[name] = raw_action - joint_pos
+        goal_deltas = self._compute_goal_deltas(joint_pos, joint_vel, ee_pos_base)
+        if goal_deltas is None:
+            return  # already logged by _compute_goal_deltas
 
         human_delta = axes_to_joint_delta(
             self._latest_joy.axes, self._jog_scale_rad_s, self._control_dt
         )
 
-        self._goal_belief.update(human_delta, policy_deltas)
+        self._goal_belief.update(human_delta, goal_deltas)
         probs = self._goal_belief.probabilities()
-        blended_delta = blend_action(human_delta, policy_deltas, probs, self._goal_names)
+        blended_delta = blend_action(
+            human_delta, goal_deltas, probs, self._goal_names, self._assist_step_rad
+        )
 
         if self._mode == 'inference_only':
             self.get_logger().info(
@@ -255,6 +277,55 @@ class SharedAutonomyNode(Node):
         blended_target_q = joint_pos + blended_delta
         clamped_q = self._safety_clamp.clamp(blended_target_q, joint_pos)
         self._publish_trajectory(clamped_q)
+
+    def _log_observe_only(self, joint_pos, joint_vel, ee_pos_base):
+        if self._action_source == 'policy':
+            observations = {
+                name: build_observation(
+                    joint_pos, joint_vel, target, ee_pos_base, self._last_action[name]
+                )
+                for name, target in self._goal_targets.items()
+            }
+            obs_summary = {name: obs.tolist() for name, obs in observations.items()}
+            self.get_logger().info(f'observations={obs_summary}', throttle_duration_sec=1.0)
+        else:
+            goal_targets_summary = {n: t.tolist() for n, t in self._goal_targets.items()}
+            self.get_logger().info(
+                f'joint_pos={joint_pos.tolist()} ee_pos_base={ee_pos_base.tolist()} '
+                f'goal_targets={goal_targets_summary}',
+                throttle_duration_sec=1.0,
+            )
+
+    def _compute_goal_deltas(self, joint_pos, joint_vel, ee_pos_base):
+        """Return {goal_name: joint_delta}, or None (and already logged) on failure."""
+        if self._action_source == 'policy':
+            deltas = {}
+            for name, target in self._goal_targets.items():
+                obs = build_observation(
+                    joint_pos, joint_vel, target, ee_pos_base, self._last_action[name]
+                )
+                raw_action = self._policy_client.infer(obs)
+                if raw_action is None:
+                    self.get_logger().warn(
+                        f'policy inference failed for goal {name!r}, skipping cycle',
+                        throttle_duration_sec=3.0,
+                    )
+                    return None
+                self._last_action[name] = raw_action
+                deltas[name] = raw_action - joint_pos
+            return deltas
+
+        deltas = {}
+        for name, target in self._goal_targets.items():
+            delta = self._potential_field_client.compute_delta(joint_pos, target)
+            if delta is None:
+                self.get_logger().warn(
+                    f'potential field computation failed for goal {name!r}, skipping cycle',
+                    throttle_duration_sec=3.0,
+                )
+                return None
+            deltas[name] = delta
+        return deltas
 
     def _publish_trajectory(self, target_q: np.ndarray):
         msg = JointTrajectory()
@@ -273,6 +344,7 @@ def main(args=None):
         rclpy.spin(node)
     finally:
         node._policy_client.close()
+        node._potential_field_client.close()
         node.destroy_node()
         rclpy.shutdown()
 

@@ -20,6 +20,8 @@ import struct
 
 OBS_DIM = 21
 ACTION_DIM = 6
+JOINT_DIM = 6
+TARGET_DIM = 3
 
 MAGIC = 0xB0
 
@@ -27,6 +29,11 @@ MSG_PING = 0x02
 MSG_PONG = 0x82
 MSG_INFER_REQ = 0x01
 MSG_INFER_RESP = 0x81
+# Additive — for scripts/potential_field_server.py (Milestone 3). The
+# existing PING/INFER messages above and everything that speaks them
+# (policy_server.py, policy_client.py) are unmodified by this addition.
+MSG_FIELD_REQ = 0x03
+MSG_FIELD_RESP = 0x83
 
 HEADER_FMT = '!BBI'  # magic(1) | msg_type(1) | seq(uint32)
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
@@ -36,6 +43,12 @@ OBS_SIZE = struct.calcsize(OBS_FMT)
 
 ACTION_FMT = f'!{ACTION_DIM}f'
 ACTION_SIZE = struct.calcsize(ACTION_FMT)
+
+# FIELD_REQ payload: current joint_pos (6 floats) followed by target_xyz
+# (3 floats). FIELD_RESP reuses ACTION_FMT/ACTION_SIZE — same shape as a
+# joint delta.
+FIELD_REQ_FMT = f'!{JOINT_DIM}f{TARGET_DIM}f'
+FIELD_REQ_SIZE = struct.calcsize(FIELD_REQ_FMT)
 
 
 class ProtocolError(Exception):
@@ -68,6 +81,16 @@ def pack_action(action) -> bytes:
 
 def unpack_action(buf: bytes) -> tuple[float, ...]:
     return struct.unpack(ACTION_FMT, buf)
+
+
+def pack_field_req(joint_pos, target_xyz) -> bytes:
+    return struct.pack(FIELD_REQ_FMT, *joint_pos, *target_xyz)
+
+
+def unpack_field_req(buf: bytes) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Return (joint_pos, target_xyz)."""
+    values = struct.unpack(FIELD_REQ_FMT, buf)
+    return values[:JOINT_DIM], values[JOINT_DIM:]
 
 
 def recv_exact(conn: socket.socket, n: int) -> bytes:
