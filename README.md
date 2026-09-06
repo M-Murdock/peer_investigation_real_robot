@@ -328,7 +328,7 @@ launch file in this project.
 
 Starting a study creates one session directory,
 `~/kinova_study_sessions/<user_id>_<timestamp>/`, and appends a line to
-`sessions.csv` there for human-readable bookkeeping. Inside it, two
+`sessions.csv` there for human-readable bookkeeping. Inside it, three
 recordings start together:
 - `ros2 bag record` (topics: `/joint_states`, `/joy`,
   `/joint_trajectory_controller/joint_trajectory` — arm state, human
@@ -351,24 +351,46 @@ recordings start together:
   than exiting), so `pw-record`'s own stderr is kept in
   `<session_dir>/audio_stderr.log` for after-the-fact debugging instead
   of being discarded.
+- `gst-launch-1.0 -e v4l2src device=<node> ! videoconvert ! x264enc ! mp4mux
+  ! filesink ...` into that session directory's `video.mp4`. GStreamer
+  rather than `ffmpeg`/`v4l2-ctl` because only `gstreamer1.0-tools` and
+  its plugin sets were already present in this workspace's environment;
+  the `-e` flag matters specifically because Stop Study's SIGINT-first
+  sequence needs the pipeline to push EOS through the muxer on interrupt
+  so `video.mp4`'s trailer gets written — without it, an mp4 killed
+  mid-recording can end up truncated/unseekable (confirmed the finalized
+  file is seekable and valid via `gst-discoverer-1.0` after a SIGINT
+  round trip). Same best-effort philosophy as audio: no capture-capable
+  camera found or the launch itself fails, and the study still starts
+  (surfaced via `/status`'s `video_start_error`; `gst-launch-1.0`'s own
+  stderr goes to `<session_dir>/video_stderr.log`).
 
 Stop Study sends SIGINT to the launch, the bag-record process, and the
-audio-record process (lets the bag/audio files finalize cleanly), falling
-back to terminate/kill if any doesn't exit within 10s.
+audio/video-record processes (lets the bag/audio/video files finalize
+cleanly), falling back to terminate/kill if any doesn't exit within 10s.
 
-The page includes an audio-device dropdown, populated from `GET
-/audio_devices` (parses `pw-dump`'s real `Audio/Source` nodes — sound
-card and USB mic included, not just `default`) and preselected to the
-server's `--audio-device` default; the operator can override it per
-session without a restart.
+The page includes audio-device and camera dropdowns. The audio one is
+populated from `GET /audio_devices` (parses `pw-dump`'s real
+`Audio/Source` nodes — sound card and USB mic included, not just
+`default`) and preselected to the server's `--audio-device` default; the
+camera one is populated from `GET /video_devices` (parses `udevadm`
+properties for every `/dev/videoN` node, keeping only the ones reporting
+the `capture` capability — a single physical webcam typically exposes
+more than one `/dev/videoN` node, and only one of them is the real
+capture device). Both are overridable per session without a restart.
 
 Useful flags: `--http-port` (default 8080), `--sessions-dir` (default
 `~/kinova_study_sessions`), `--rl-project-dir` (default this checkout's
 path — used to locate `config/home_pose.txt`), `--audio-device` (default
 `default`, a PipeWire node.name, or `default` meaning "let PipeWire
-auto-pick"; shown as the dropdown's preselected value). Requires
-`pw-record`/`pw-dump` (Debian/Ubuntu: `pipewire-bin`, already declared as
-an `exec_depend`).
+auto-pick"; shown as the dropdown's preselected value), `--video-device`
+(default empty string, a `/dev/videoN` path, or empty meaning "auto-pick
+the first capture-capable camera udev reports"). Requires
+`pw-record`/`pw-dump` (Debian/Ubuntu: `pipewire-bin`), `udevadm`
+(Debian/Ubuntu: `udev`), and `gst-launch-1.0` with the v4l2/x264/mp4
+plugins (Debian/Ubuntu: `gstreamer1.0-tools`,
+`gstreamer1.0-plugins-{base,good,ugly}`) — all already declared as
+`exec_depend`s.
 
 ### Why two Python environments, concretely
 

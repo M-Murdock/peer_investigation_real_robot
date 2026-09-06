@@ -89,10 +89,14 @@
   <label for="audio-device-select">Audio device</label>
   <select id="audio-device-select"><option value="default">default</option></select>
 
+  <label for="video-device-select">Camera</label>
+  <select id="video-device-select"><option value="">auto-detect</option></select>
+
   <button id="start-btn" onclick="startStudy()">Start Study</button>
   <button id="stop-btn" class="stop" onclick="stopStudy()" disabled>Stop Study</button>
   <div class="status-line">Study: <span id="study-status" class="value">idle</span></div>
   <div class="status-line">Audio: <span id="audio-status" class="value">idle</span></div>
+  <div class="status-line">Video: <span id="video-status" class="value">idle</span></div>
 </div>
 
 <div id="error-box"></div>
@@ -101,8 +105,10 @@
 let latestStatus = {
   homing: 'idle', study: 'idle', has_homed: false,
   audio_recording: false, audio_start_error: null, default_audio_device: 'default',
+  video_recording: false, video_start_error: null, default_video_device: '',
 };
 let audioDevicesLoaded = false;
+let videoDevicesLoaded = false;
 
 async function loadAudioDevices() {
   try {
@@ -119,8 +125,30 @@ async function loadAudioDevices() {
     select.value = latestStatus.default_audio_device;
     audioDevicesLoaded = true;
   } catch (e) {
-    // arecord may not be installed / no cards present -- the 'default'
+    // pw-record may not be installed / no cards present -- the 'default'
     // option already in the page's static HTML still works as a fallback
+  }
+}
+
+async function loadVideoDevices() {
+  try {
+    const resp = await fetch('/video_devices');
+    const data = await resp.json();
+    const select = document.getElementById('video-device-select');
+    select.innerHTML = '<option value="">auto-detect</option>';
+    for (const dev of data.devices) {
+      const opt = document.createElement('option');
+      opt.value = dev.id;
+      opt.textContent = dev.label;
+      select.appendChild(opt);
+    }
+    if (latestStatus.default_video_device) {
+      select.value = latestStatus.default_video_device;
+    }
+    videoDevicesLoaded = true;
+  } catch (e) {
+    // no camera / udevadm unavailable -- 'auto-detect' stays the fallback,
+    // and the server itself skips video recording if none is ever found
   }
 }
 
@@ -162,7 +190,12 @@ async function pollStatus() {
     if (latestStatus.audio_start_error) {
       showError('audio recording failed to start: ' + latestStatus.audio_start_error);
     }
+    setStatusText('video-status', latestStatus.video_recording ? 'running' : 'idle');
+    if (latestStatus.video_start_error) {
+      showError('video recording failed to start: ' + latestStatus.video_start_error);
+    }
     if (!audioDevicesLoaded) { loadAudioDevices(); }
+    if (!videoDevicesLoaded) { loadVideoDevices(); }
     refreshButtons();
   } catch (e) {
     // transient network hiccup while polling -- ignore, next poll will retry
@@ -181,10 +214,14 @@ async function startStudy() {
   showError('');
   const userId = document.getElementById('user-id').value.trim();
   const audioDevice = document.getElementById('audio-device-select').value;
+  const videoDevice = document.getElementById('video-device-select').value;
   const resp = await fetch('/start_study', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId, env_id: selectedEnv(), audio_device: audioDevice }),
+    body: JSON.stringify({
+      user_id: userId, env_id: selectedEnv(),
+      audio_device: audioDevice, video_device: videoDevice,
+    }),
   });
   const data = await resp.json();
   if (!resp.ok) { showError(data.error || 'failed to start study'); }

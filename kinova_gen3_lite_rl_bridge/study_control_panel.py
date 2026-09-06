@@ -18,9 +18,9 @@ able to bypass them. This panel computes nothing new about robot motion:
 it only shells out to already-validated command lines (`ros2 run
 gen3-lite-ros2 joint_playback ...`, `ros2 launch kinova_gen3_lite_rl_bridge
 shared_autonomy.launch.py mode:=live ...`, `ros2 bag record ...`,
-`pw-record ...`) and does NOT start kortex_bringup itself — hardware
-bringup stays a separate manual step, matching every launch file in this
-package.
+`pw-record ...`, `gst-launch-1.0 ...`) and does NOT start kortex_bringup
+itself — hardware bringup stays a separate manual step, matching every
+launch file in this package.
 
 Usage:
     ros2 run kinova_gen3_lite_rl_bridge study_control_panel
@@ -31,6 +31,7 @@ import argparse
 import csv
 from dataclasses import dataclass
 from datetime import datetime
+import glob
 import json
 import os
 import signal
@@ -51,11 +52,10 @@ DEFAULT_HTTP_PORT = 8080
 DEFAULT_RL_PROJECT_DIR = '/home/mavis/ros2_ws/src/peer_investigation_real_robot'
 DEFAULT_SESSIONS_DIR = os.path.expanduser('~/kinova_study_sessions')
 DEFAULT_AUDIO_DEVICE = 'default'
+DEFAULT_VIDEO_DEVICE = ''  # '' -> auto-pick the first detected camera at session start
 
 # /joint_states + /joy + the actual blended commands sent — enough to
-# fully reconstruct a session for analysis. No camera topic: unlike
-# investigating_peer_real_robot/session_gui.py's study (on `main`), this
-# project has no camera set up.
+# fully reconstruct a session for analysis.
 BAG_TOPICS = ['/joint_states', '/joy', '/joint_trajectory_controller/joint_trajectory']
 
 STATUS_IDLE = 'idle'
@@ -69,6 +69,7 @@ class PanelConfig:
     home_pose_path: str
     sessions_dir: str
     audio_device: str = DEFAULT_AUDIO_DEVICE
+    video_device: str = DEFAULT_VIDEO_DEVICE
 
 
 class PanelState:
@@ -79,13 +80,18 @@ class PanelState:
         self.study_proc: Optional[subprocess.Popen] = None
         self.bag_proc: Optional[subprocess.Popen] = None
         self.audio_proc: Optional[subprocess.Popen] = None
+        self.video_proc: Optional[subprocess.Popen] = None
         self.has_homed = False
         self.last_home_result: Optional[str] = None
         self.last_study_result: Optional[str] = None
         self.audio_start_error: Optional[str] = None
+        self.video_start_error: Optional[str] = None
 
     def audio_recording(self) -> bool:
         return self.audio_proc is not None and self.audio_proc.poll() is None
+
+    def video_recording(self) -> bool:
+        return self.video_proc is not None and self.video_proc.poll() is None
 
     def homing_status(self) -> str:
         if self.home_proc is not None:
@@ -110,17 +116,18 @@ class PanelState:
 
 def _session_paths(sessions_dir: str, user_id: str, timestamp: str):
     """
-    Return (session_dir, bag_path, audio_path) for one session.
+    Return (session_dir, bag_path, audio_path, video_path) for one session.
 
     One session directory holds a `rosbag/` subdirectory (the bag's own
     `-o` target — `ros2 bag record` creates that path itself, so it must
-    not already exist) and `audio.wav` as siblings — matches
-    investigating_peer_real_robot/session_gui.py's own layout.
+    not already exist), `audio.wav`, and `video.mp4` as siblings —
+    matches investigating_peer_real_robot/session_gui.py's own layout.
     """
     session_dir = os.path.join(sessions_dir, f'{user_id}_{timestamp}')
     bag_path = os.path.join(session_dir, 'rosbag')
     audio_path = os.path.join(session_dir, 'audio.wav')
-    return session_dir, bag_path, audio_path
+    video_path = os.path.join(session_dir, 'video.mp4')
+    return session_dir, bag_path, audio_path, video_path
 
 
 def _parse_pipewire_sources(pw_dump_json: str) -> list:
@@ -165,6 +172,52 @@ def _list_audio_devices() -> list:
     return _parse_pipewire_sources(result.stdout)
 
 
+def _parse_udevadm_properties(output: str) -> dict:
+    props = {}
+    for line in output.splitlines():
+        if '=' not in line:
+            continue
+        key, _, value = line.partition('=')
+        props[key] = value
+    return props
+
+
+def _is_capture_device(props: dict) -> bool:
+    return 'capture' in props.get('ID_V4L_CAPABILITIES', '').split(':')
+
+
+def _video_device_label(node: str, props: dict) -> str:
+    product = props.get('ID_V4L_PRODUCT', node).replace('_', ' ')
+    return f'{product} ({node})'
+
+
+def _list_video_devices() -> list:
+    """
+    Enumerate real, capture-capable /dev/videoN nodes via udevadm.
+
+    A UVC webcam typically exposes more than one /dev/videoN node per
+    physical camera (a capture node plus metadata/other nodes) —
+    ID_V4L_CAPABILITIES is what distinguishes the actual capture node,
+    same idea as filtering pw-dump to Audio/Source in _list_audio_devices.
+    No 'default' sentinel here (unlike audio's PipeWire 'default' alias,
+    v4l2src has no camera-agnostic virtual device to fall back to) — an
+    empty list here means no camera was found, and the caller skips video
+    recording for that session (best-effort, same as a missing mic).
+    """
+    devices = []
+    for node in sorted(glob.glob('/dev/video*')):
+        try:
+            result = subprocess.run(
+                ['udevadm', 'info', '--query=property', '--name', node],
+                capture_output=True, text=True, timeout=5, check=False)
+        except OSError:
+            return devices
+        props = _parse_udevadm_properties(result.stdout)
+        if _is_capture_device(props):
+            devices.append({'id': node, 'label': _video_device_label(node, props)})
+    return devices
+
+
 def _stop_process(proc: Optional[subprocess.Popen]) -> None:
     """
     Stop proc gracefully, escalating if it doesn't exit in time.
@@ -201,12 +254,20 @@ class StatusHandler(tornado.web.RequestHandler):
             'audio_recording': self._state.audio_recording(),
             'audio_start_error': self._state.audio_start_error,
             'default_audio_device': self._config.audio_device,
+            'video_recording': self._state.video_recording(),
+            'video_start_error': self._state.video_start_error,
+            'default_video_device': self._config.video_device,
         })
 
 
 class AudioDevicesHandler(tornado.web.RequestHandler):
     def get(self):
         self.write({'devices': _list_audio_devices()})
+
+
+class VideoDevicesHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.write({'devices': _list_video_devices()})
 
 
 class HomeHandler(tornado.web.RequestHandler):
@@ -247,6 +308,7 @@ class StartStudyHandler(tornado.web.RequestHandler):
         user_id = body.get('user_id', '')
         env_id = body.get('env_id', '')
         audio_device = body.get('audio_device') or self._config.audio_device
+        video_device = body.get('video_device') or self._config.video_device
 
         if self._state.homing_status() == STATUS_RUNNING:
             self.set_status(409)
@@ -271,7 +333,7 @@ class StartStudyHandler(tornado.web.RequestHandler):
 
         user_id = normalize_user_id(user_id)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        session_dir, bag_path, audio_path = _session_paths(
+        session_dir, bag_path, audio_path, video_path = _session_paths(
             self._config.sessions_dir, user_id, timestamp)
         os.makedirs(session_dir, exist_ok=True)
         self._append_session_log(timestamp, user_id, env_id, session_dir)
@@ -307,9 +369,46 @@ class StartStudyHandler(tornado.web.RequestHandler):
             self._state.audio_proc = None
             self._state.audio_start_error = str(exc)
 
-        response = {'status': 'started', 'session_dir': session_dir, 'audio_device': audio_device}
+        # Same best-effort philosophy as audio: a missing/busy camera
+        # shouldn't block the study. If no device was picked and none is
+        # configured server-side, auto-pick the first one udev reports
+        # rather than failing outright -- there's usually exactly one
+        # camera, so this is the common case, not a fallback for a rare one.
+        if not video_device:
+            detected = _list_video_devices()
+            video_device = detected[0]['id'] if detected else None
+
+        self._state.video_start_error = None
+        if video_device is None:
+            self._state.video_start_error = 'no capture-capable camera detected'
+        else:
+            video_cmd = [
+                'gst-launch-1.0', '-e',
+                'v4l2src', f'device={video_device}',
+                '!', 'videoconvert',
+                '!', 'x264enc', 'tune=zerolatency', 'speed-preset=ultrafast',
+                '!', 'mp4mux',
+                '!', 'filesink', f'location={video_path}',
+            ]
+            try:
+                with open(os.path.join(session_dir, 'video_stderr.log'), 'wb') as video_stderr:
+                    self._state.video_proc = subprocess.Popen(
+                        video_cmd, stdout=subprocess.DEVNULL, stderr=video_stderr,
+                    )
+            except OSError as exc:
+                self._state.video_proc = None
+                self._state.video_start_error = str(exc)
+
+        response = {
+            'status': 'started',
+            'session_dir': session_dir,
+            'audio_device': audio_device,
+            'video_device': video_device,
+        }
         if self._state.audio_start_error is not None:
             response['audio_error'] = self._state.audio_start_error
+        if self._state.video_start_error is not None:
+            response['video_error'] = self._state.video_start_error
         self.write(response)
 
     def _append_session_log(self, timestamp, user_id, env_id, session_dir):
@@ -330,9 +429,11 @@ class StopStudyHandler(tornado.web.RequestHandler):
         _stop_process(self._state.study_proc)
         _stop_process(self._state.bag_proc)
         _stop_process(self._state.audio_proc)
+        _stop_process(self._state.video_proc)
         self._state.study_proc = None
         self._state.bag_proc = None
         self._state.audio_proc = None
+        self._state.video_proc = None
         self.write({'status': 'stopped'})
 
 
@@ -346,6 +447,7 @@ def make_app(state: PanelState, config: PanelConfig, web_path: str):
     return tornado.web.Application([
         (r'/status', StatusHandler, {'state': state, 'config': config}),
         (r'/audio_devices', AudioDevicesHandler),
+        (r'/video_devices', VideoDevicesHandler),
         (r'/home', HomeHandler, {'state': state, 'config': config}),
         (r'/start_study', StartStudyHandler, {'state': state, 'config': config}),
         (r'/stop_study', StopStudyHandler, {'state': state}),
@@ -361,6 +463,7 @@ def main(args=None):
     parser.add_argument('--rl-project-dir', default=DEFAULT_RL_PROJECT_DIR)
     parser.add_argument('--sessions-dir', default=DEFAULT_SESSIONS_DIR)
     parser.add_argument('--audio-device', default=DEFAULT_AUDIO_DEVICE)
+    parser.add_argument('--video-device', default=DEFAULT_VIDEO_DEVICE)
     parsed = parser.parse_args(args=args)
 
     web_path = parsed.web_path or _default_web_path()
@@ -369,6 +472,7 @@ def main(args=None):
         home_pose_path=home_pose_path,
         sessions_dir=parsed.sessions_dir,
         audio_device=parsed.audio_device,
+        video_device=parsed.video_device,
     )
     state = PanelState()
 
@@ -381,6 +485,10 @@ def main(args=None):
     print(f'[study_control_panel] home pose file: {home_pose_path}', file=sys.stderr)
     print(f'[study_control_panel] sessions dir: {parsed.sessions_dir}', file=sys.stderr)
     print(f'[study_control_panel] audio device: {parsed.audio_device}', file=sys.stderr)
+    print(
+        f'[study_control_panel] video device: {parsed.video_device or "(auto-detect)"}',
+        file=sys.stderr,
+    )
 
     tornado.ioloop.IOLoop.current().start()
 

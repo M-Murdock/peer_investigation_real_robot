@@ -22,6 +22,11 @@
   <exec_depend>python3-tornado</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>pipewire-bin</exec_depend>
+  <exec_depend>udev</exec_depend>
+  <exec_depend>gstreamer1.0-tools</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-base</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-good</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-ugly</exec_depend>
 
   <test_depend>ament_cmake_flake8</test_depend>
   <test_depend>ament_cmake_pep257</test_depend>
