@@ -215,7 +215,7 @@ def generate_launch_description():
         DeclareLaunchArgument('jog_scale_rad_s', default_value='0.3'),
         DeclareLaunchArgument('jog_scale_m_s', default_value='0.15'),
         DeclareLaunchArgument(
-            'assist_step_rad', default_value='0.01',
+            'assist_step_rad', default_value='0.03',
             description='Per-cycle magnitude each goal direction is normalized to before '
                         'belief-weighting and summing with the human jog input, keeping the '
                         'human meaningfully influential regardless of a goal deltas own raw '

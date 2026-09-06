@@ -97,9 +97,9 @@ class SharedAutonomyNode(Node):
         self.declare_parameter('jog_mode', 'cartesian')
         self.declare_parameter('jog_scale_rad_s', 0.3)
         self.declare_parameter('jog_scale_m_s', 0.15)
-        self.declare_parameter('assist_step_rad', 0.01)
+        self.declare_parameter('assist_step_rad', 0.03)
         self.declare_parameter(
-            'safety.max_step_rad', [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+            'safety.max_step_rad', [0.03, 0.03, 0.03, 0.03, 0.03, 0.03]
         )
         self.declare_parameter(
             'safety.max_velocity_rad_s', [0.3, 0.3, 0.3, 0.3, 0.3, 0.3]

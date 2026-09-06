@@ -21,11 +21,22 @@ shared_autonomy_node:
     # happens to be much larger than the human's deliberately small jog
     # (e.g. a potential field far from its target) dominates the blend
     # regardless of belief, swamping the human's steering entirely once
-    # the final safety clamp saturates. Matches safety.max_step_rad by
-    # default so pure-autonomy motion (stick centered) already sits at
-    # the safety-clamped rate.
-    assist_step_rad: 0.01
-    safety.max_step_rad: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+    # the final safety clamp saturates. Kept equal to safety.max_step_rad
+    # so pure-autonomy motion (stick centered) already sits at the
+    # safety-clamped rate, not throttled further by a smaller value here.
+    #
+    # 0.01 rad/cycle (~0.1 rad/s effective) was Milestone 1's deliberately
+    # extremely-conservative first-live-test value. Raised to 0.03 rad —
+    # at control_rate_hz=10 this now matches max_velocity_rad_s*dt exactly
+    # (~0.3 rad/s effective), still comfortably under the hardware's own
+    # 0.5 rad/s soft cap (ros2_kortex's joint_limits.yaml) — after several
+    # confirmed-safe live runs at the smaller value, per the runbook's
+    # "progressively relax, still under the hardware cap" staged-rollout
+    # rule. Steps this small could also look stuttery on real hardware
+    # (near-stationary start-stop motion each cycle) — a moderate increase
+    # addresses both speed and smoothness together.
+    assist_step_rad: 0.03
+    safety.max_step_rad: [0.03, 0.03, 0.03, 0.03, 0.03, 0.03]
     safety.max_velocity_rad_s: [0.3, 0.3, 0.3, 0.3, 0.3, 0.3]
     safety.joint_lower_rad: [-2.68, -2.61, -2.61, -2.60, -2.53, -2.60]
     safety.joint_upper_rad: [2.68, 2.61, 2.61, 2.60, 2.53, 2.60]
