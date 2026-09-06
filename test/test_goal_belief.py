@@ -96,7 +96,7 @@ def test_reset_returns_to_uniform():
     np.testing.assert_allclose(belief.probabilities(), [1 / 3, 1 / 3, 1 / 3])
 
 
-def test_blend_action_weights_by_probability_and_adds_human_delta():
+def test_blend_action_weights_by_probability_and_averages_with_human_delta():
     # Already-unit-length deltas, so normalization is a no-op here — this
     # test isolates the probability-weighting behavior.
     human_delta = np.array([0.01, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -111,7 +111,7 @@ def test_blend_action_weights_by_probability_and_adds_human_delta():
     blended = blend_action(human_delta, deltas, probs, GOAL_NAMES, assist_step_rad)
 
     expected_direction = 0.5 * deltas['kettle'] + 0.3 * deltas['mug'] + 0.2 * deltas['infuser']
-    expected = expected_direction * assist_step_rad + human_delta
+    expected = (human_delta + expected_direction * assist_step_rad) / 2.0
     np.testing.assert_allclose(blended, expected)
 
 
@@ -151,4 +151,4 @@ def test_blend_action_scales_with_assist_step_rad():
 
     blended = blend_action(human_delta, deltas, probs, GOAL_NAMES, assist_step_rad=0.05)
 
-    np.testing.assert_allclose(blended, [0.05, 0.0, 0.0, 0.0, 0.0, 0.0])
+    np.testing.assert_allclose(blended, [0.025, 0.0, 0.0, 0.0, 0.0, 0.0])

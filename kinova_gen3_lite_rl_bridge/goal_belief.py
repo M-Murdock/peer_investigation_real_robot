@@ -132,6 +132,10 @@ def blend_action(
     saturated the per-cycle step, swamping the human's contribution.
     Normalizing first keeps the human's steering meaningfully influential
     regardless of how far away any goal currently is.
+
+    The final combination is a straight average of the human's delta and
+    the belief-weighted assistance direction — not an additive sum — so
+    each side counts for half regardless of belief confidence.
     """
     weighted_direction = np.zeros_like(human_delta)
     for prob, name in zip(probs, goal_names):
@@ -139,4 +143,4 @@ def blend_action(
         norm = float(np.linalg.norm(delta))
         direction = delta / norm if norm > _MIN_VECTOR_NORM else delta
         weighted_direction = weighted_direction + prob * direction
-    return weighted_direction * assist_step_rad + human_delta
+    return (human_delta + weighted_direction * assist_step_rad) / 2.0

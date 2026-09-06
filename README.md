@@ -271,7 +271,14 @@ a goal delta whose raw magnitude happens to be much larger than the
 human's deliberately tiny jog (a potential field far from its target,
 especially) dominates the final safety-clamped command regardless of
 belief, making the joystick seem to do nothing; found via real hardware
-testing. `k_p` (default 2.0) and `damping_lambda` (default 0.05) tune the
+testing. The final command is a straight average of the human's delta
+and the belief-weighted assistance direction (`(human_delta +
+assistance) / 2`) — not an additive sum — so each side always counts for
+half regardless of belief confidence; a full-strength joystick push
+alone now moves the arm at roughly half the rate it would with
+assistance disabled entirely, which is a real tradeoff to keep in mind
+when retuning `jog_scale_rad_s`/`jog_scale_m_s`/`assist_step_rad`.
+`k_p` (default 2.0) and `damping_lambda` (default 0.05) tune the
 potential field's gain and singularity-robustness, used whenever
 `action_source:=potential_field` or `jog_mode:=cartesian`.
 
