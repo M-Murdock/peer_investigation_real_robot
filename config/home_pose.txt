@@ -1,11 +1,30 @@
-# Home waypoint for gen3-lite-ros2's joint_playback.py — all joints at
-# zero, matching the trained policy's home/default configuration
-# (reach_env_cfg.py's HOME_KEYFRAME) and the potential field's chain
-# origin. 15s duration: at this magnitude of joint swing from an
-# arbitrary starting pose, a shorter duration's *peak* spline velocity
-# (~1.875x the naive average — see the project plan) can exceed
+# Home waypoint for gen3-lite-ros2's joint_playback.py — matches the
+# Kinova web interface's built-in "Home" action (Kortex API predefined
+# action, handle identifier=2), NOT the "Zero" action (all joints at 0,
+# which is what this file held previously). Read from the robot itself
+# via the Kortex API's ReadAllActions (degrees: joint_1=0, joint_2=344,
+# joint_3=75, joint_4=0, joint_5=300, joint_6=0) and converted to radians
+# using the same wrap-to-(-180,180] convention /joint_states already
+# uses for continuous joints — confirmed empirically by comparing a live
+# GetMeasuredJointAngles() (Kortex degrees) reading against a
+# simultaneous /joint_states (ROS radians) reading for the same pose,
+# rather than assumed.
+#
+# Note: the trained RL policy's observation (joint_pos_rel) assumes a
+# home/default of all-zero (reach_env_cfg.py's HOME_KEYFRAME) — this
+# change only affects action_source=potential_field's start pose (the
+# current default; potential-field reaching works from any starting
+# configuration via the Jacobian, unlike the policy). If action_source
+# is ever switched back to policy, its behavior from this new Home pose
+# is unvalidated.
+#
+# 15s duration: at this magnitude of joint swing from an arbitrary
+# starting pose, a shorter duration's *peak* spline velocity (~1.875x
+# the naive average — see the project plan) can exceed
 # joint_limits.yaml's per-joint cap and trip a real Kinova joint fault,
 # confirmed the hard way on real hardware. Validated safe at this
-# duration across multiple live sessions.
+# duration across multiple live sessions (for the previous Zero target;
+# same conservative margin applies here since duration was chosen for
+# worst-case per-joint travel, not this specific target).
 # joint_1, joint_2, joint_3, joint_4, joint_5, joint_6, duration
-0, 0, 0, 0, 0, 0, 15.0
+0, -0.279253, 1.308997, 0, -1.047198, 0, 15.0
