@@ -241,20 +241,39 @@ ros2 launch kinova_gen3_lite_rl_bridge shared_autonomy.launch.py \
     mode:=live env_id:=env_a                         # Stage 3: real motion, e-stop in hand
 ```
 
-Only the left/right sticks jog joints 1–4 directly (`jog_scale_rad_s`,
-default 0.3 rad/s); joints 5/6 get no direct joystick input in this first
-version (trigger axes are single-ended on most controllers, not
-well-suited to bidirectional jogging) — their motion comes entirely from
-the blended suggestion. `temperature` (default 3.0) controls how many
-consistent cycles of jogging it takes to concentrate belief on the
-matching goal — evidence is cosine similarity between the human's jog
-direction and each goal's suggested direction (direction-only,
-deliberately not raw distance — an undertrained RL policy's action
-magnitude in particular varies goal to goal for reasons unrelated to
-direction, and would otherwise swamp whether the directions actually
-agree). `k_p` (default 2.0) and `damping_lambda` (default 0.05) tune the
-potential field's gain and singularity-robustness, only used when
-`action_source:=potential_field`.
+The human's jog input similarly picks between two sources, `jog_mode`:
+- **`cartesian`** (default) — the left/right sticks move the end effector
+  in X/Y/Z (base frame), converted to a joint delta via the same Jacobian
+  machinery as the potential field (`jog_scale_m_s`, default 0.15 m/s —
+  the same value `joy_teleop.py` already uses as `LINEAR_SCALE`).
+  `left_stick_v`→X, `left_stick_h`→Y, `right_stick_v`→Z, matching
+  `joy_teleop.py`'s own TRANSLATE-mode convention; `right_stick_h` stays
+  unused (no orientation jogging). Needs `potential_field_server` running
+  for its Jacobian *even when* `action_source:=policy`.
+- **`joint`** — sticks map straight to joints 1–4 (`jog_scale_rad_s`,
+  default 0.3 rad/s); joints 5/6 get no direct input (trigger axes are
+  single-ended on most controllers, not well-suited to bidirectional
+  jogging). The original Milestone 2 mapping — unintuitive for "move in
+  3D" since the same stick push means something different depending on
+  the arm's current configuration, but still available:
+  `jog_mode:=joint`.
+
+`temperature` (default 3.0) controls how many consistent cycles of
+jogging it takes to concentrate belief on the matching goal — evidence is
+cosine similarity between the human's jog direction and each goal's
+suggested direction (direction-only, deliberately not raw distance — an
+undertrained RL policy's action magnitude in particular varies goal to
+goal for reasons unrelated to direction, and would otherwise swamp
+whether the directions actually agree). `assist_step_rad` (default 0.01)
+normalizes each goal's suggested delta to this fixed magnitude before
+blending with the human's input — without it, a goal delta whose raw
+magnitude happens to be much larger than the human's deliberately tiny
+jog (a potential field far from its target, especially) dominates the
+final safety-clamped command regardless of belief, making the joystick
+seem to do nothing; found via real hardware testing. `k_p` (default 2.0)
+and `damping_lambda` (default 0.05) tune the potential field's gain and
+singularity-robustness, used whenever `action_source:=potential_field`
+or `jog_mode:=cartesian`.
 
 ### Why two Python environments, concretely
 

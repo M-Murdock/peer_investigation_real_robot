@@ -90,6 +90,29 @@ class PotentialFieldClient:
             self._drop_connection()
             return None
 
+    def compute_jog_delta(
+        self, joint_pos: np.ndarray, cartesian_delta: np.ndarray
+    ) -> np.ndarray | None:
+        """Send (joint_pos, cartesian_delta), return the joint delta, or None on failure."""
+        if not self._ensure_connected():
+            return None
+        seq = self._next_seq()
+        try:
+            self._conn.sendall(
+                proto.pack_header(proto.MSG_JOG_REQ, seq)
+                + proto.pack_field_req(joint_pos, cartesian_delta)
+            )
+            header = proto.recv_exact(self._conn, proto.HEADER_SIZE)
+            msg_type, resp_seq = proto.unpack_header(header)
+            if msg_type != proto.MSG_JOG_RESP or resp_seq != seq:
+                raise proto.ProtocolError(f'unexpected response {msg_type:#x}/{resp_seq}')
+            payload = proto.recv_exact(self._conn, proto.ACTION_SIZE)
+            return np.array(proto.unpack_action(payload), dtype=np.float32)
+        except (OSError, proto.ProtocolError) as exc:
+            self._logger.warning(f'compute_jog_delta failed, dropping connection: {exc}')
+            self._drop_connection()
+            return None
+
     def _next_seq(self) -> int:
         self._seq = (self._seq + 1) & 0xFFFFFFFF
         return self._seq

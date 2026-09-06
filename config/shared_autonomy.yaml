@@ -9,7 +9,12 @@ shared_autonomy_node:
     # controls how many consistent cycles it takes to build confidence,
     # not the magnitude of a single-step comparison.
     temperature: 3.0
+    # jog_mode=cartesian (default): sticks move the end effector in X/Y/Z
+    # via the Jacobian (jog_scale_m_s). jog_mode=joint: sticks map straight
+    # to joints 1-4 (jog_scale_rad_s). Only the active mode's scale is used.
+    jog_mode: cartesian
     jog_scale_rad_s: 0.3
+    jog_scale_m_s: 0.15
     # Each goal's raw suggested delta is normalized to a unit direction
     # scaled to this magnitude before belief-weighting and summing with
     # the human's jog input — otherwise a goal delta whose raw magnitude

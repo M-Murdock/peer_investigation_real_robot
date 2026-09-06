@@ -22,7 +22,11 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'kinova_gen3_lite_rl_bridge'))
 import ipc_protocol as proto  # noqa: E402,I100 (path insert must precede this)
 
-from kinova_mjlab_reaching.deploy.potential_field import compute_field_delta, load_chain  # noqa: E402
+from kinova_mjlab_reaching.deploy.potential_field import (  # noqa: E402
+    cartesian_delta_to_joint_delta,
+    compute_field_delta,
+    load_chain,
+)
 
 
 def _serve_connection(conn: socket.socket, chain, k_p: float, damping_lambda: float) -> None:
@@ -41,6 +45,17 @@ def _serve_connection(conn: socket.socket, chain, k_p: float, damping_lambda: fl
                 delta = compute_field_delta(chain, joint_pos, target_xyz, k_p, damping_lambda)
                 conn.sendall(
                     proto.pack_header(proto.MSG_FIELD_RESP, seq) + proto.pack_action(delta.tolist())
+                )
+                continue
+
+            if msg_type == proto.MSG_JOG_REQ:
+                payload = proto.recv_exact(conn, proto.FIELD_REQ_SIZE)
+                joint_pos, cartesian_delta = proto.unpack_field_req(payload)
+                delta = cartesian_delta_to_joint_delta(
+                    chain, joint_pos, cartesian_delta, damping_lambda
+                )
+                conn.sendall(
+                    proto.pack_header(proto.MSG_JOG_RESP, seq) + proto.pack_action(delta.tolist())
                 )
                 continue
 

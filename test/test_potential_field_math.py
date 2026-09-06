@@ -88,6 +88,21 @@ def _field_request(socket_path, joint_pos, target_xyz, seq=1):
         return proto.unpack_action(payload)
 
 
+def _jog_request(socket_path, joint_pos, cartesian_delta, seq=1):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+        conn.connect(socket_path)
+        conn.sendall(
+            proto.pack_header(proto.MSG_JOG_REQ, seq)
+            + proto.pack_field_req(joint_pos, cartesian_delta)
+        )
+        header = proto.recv_exact(conn, proto.HEADER_SIZE)
+        msg_type, resp_seq = proto.unpack_header(header)
+        assert msg_type == proto.MSG_JOG_RESP
+        assert resp_seq == seq
+        payload = proto.recv_exact(conn, proto.ACTION_SIZE)
+        return proto.unpack_action(payload)
+
+
 def test_ping_pong(field_server):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
         conn.connect(field_server)
@@ -139,3 +154,32 @@ def test_delta_magnitude_scales_with_k_p(tmp_path):
     assert norm_high > norm_low, (
         f'expected higher k_p to give a larger delta: {norm_low} vs {norm_high}'
     )
+
+
+def test_jog_zero_cartesian_delta_gives_zero_joint_delta(field_server):
+    joint_pos = [0.0] * 6
+    delta = _jog_request(field_server, joint_pos, (0.0, 0.0, 0.0))
+
+    assert all(abs(v) < 1e-9 for v in delta), f'expected exactly zero delta, got {delta}'
+
+
+def test_jog_is_linear_in_the_cartesian_delta(field_server):
+    # The Jacobian conversion is linear for a fixed joint_pos: negating or
+    # scaling the input must negate/scale the output correspondingly. This
+    # is a strong, FK-free regression check (this test file runs under
+    # system Python, without kinpy, so it can't independently verify "this
+    # moves toward +X" the way the uv-side planning session's ad hoc check
+    # did) — but it precisely pins the linear-algebra behavior the real
+    # Cartesian jog feature depends on.
+    joint_pos = [0.1, -0.2, 0.3, -0.1, 0.2, 0.0]
+    forward = _jog_request(field_server, joint_pos, (0.05, 0.0, 0.0))
+    backward = _jog_request(field_server, joint_pos, (-0.05, 0.0, 0.0))
+    doubled = _jog_request(field_server, joint_pos, (0.1, 0.0, 0.0))
+
+    assert any(abs(v) > 1e-6 for v in forward), 'expected a nonzero delta'
+    for f, b in zip(forward, backward):
+        assert abs(f + b) < 1e-6, f'expected backward to negate forward: {forward} vs {backward}'
+    for f, d in zip(forward, doubled):
+        assert abs(2 * f - d) < 1e-6, (
+            f'expected doubled input to double the delta: {forward} vs {doubled}'
+        )

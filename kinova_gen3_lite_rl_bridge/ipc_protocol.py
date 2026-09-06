@@ -34,6 +34,14 @@ MSG_INFER_RESP = 0x81
 # (policy_server.py, policy_client.py) are unmodified by this addition.
 MSG_FIELD_REQ = 0x03
 MSG_FIELD_RESP = 0x83
+# Additive — for a direct Cartesian-delta-to-joint-delta conversion
+# (Milestone 4), served by the same potential_field_server.py process.
+# Same wire shape as FIELD_REQ/ACTION (reuses pack_field_req/unpack_field_req
+# and pack_action/unpack_action — the second 3-float field just means
+# "desired cartesian_delta" here instead of "target_xyz"), but a distinct
+# msg_type so the protocol stays self-documenting.
+MSG_JOG_REQ = 0x04
+MSG_JOG_RESP = 0x84
 
 HEADER_FMT = '!BBI'  # magic(1) | msg_type(1) | seq(uint32)
 HEADER_SIZE = struct.calcsize(HEADER_FMT)

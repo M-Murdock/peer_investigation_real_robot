@@ -29,11 +29,22 @@ via potential_field_client.py — Milestone 3, for when the policy is
 undertrained/doesn't generalize from arbitrary starting configurations).
 Both produce the same shape of per-goal joint delta, so everything
 downstream — GoalBelief, blend_action, SafetyClamp — is identical either
-way. See the project plan's "Milestone 2" and "Milestone 3" sections for
+way.
+
+The human's own jog input similarly comes from either of two
+interchangeable sources, selected by `jog_mode`: `joint` (sticks map
+straight to joints 1-4, via joy_joint_jog.py — unmodified from
+Milestone 2) or `cartesian` (sticks map to X/Y/Z end-effector motion,
+converted to a joint delta via the same Jacobian machinery as the
+potential field — Milestone 4, for intuitive "move in 3D space" jogging
+regardless of the arm's current configuration). `cartesian` needs the
+potential field server for its Jacobian *even when action_source=policy*.
+See the project plan's "Milestone 2" through "Milestone 4" sections for
 the full rationale.
 """
 
 from kinova_gen3_lite_rl_bridge.goal_belief import blend_action, GoalBelief
+from kinova_gen3_lite_rl_bridge.joy_cartesian_jog import axes_to_cartesian_delta
 from kinova_gen3_lite_rl_bridge.joy_joint_jog import axes_to_joint_delta
 from kinova_gen3_lite_rl_bridge.observation_builder import (
     ACTION_DIM,
@@ -61,6 +72,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 _VALID_MODES = ('observe_only', 'inference_only', 'live')
 _VALID_ACTION_SOURCES = ('policy', 'potential_field')
+_VALID_JOG_MODES = ('joint', 'cartesian')
 
 
 class SharedAutonomyNode(Node):
@@ -82,7 +94,9 @@ class SharedAutonomyNode(Node):
             'joint_trajectory_topic', '/joint_trajectory_controller/joint_trajectory'
         )
         self.declare_parameter('temperature', 3.0)
+        self.declare_parameter('jog_mode', 'cartesian')
         self.declare_parameter('jog_scale_rad_s', 0.3)
+        self.declare_parameter('jog_scale_m_s', 0.15)
         self.declare_parameter('assist_step_rad', 0.01)
         self.declare_parameter(
             'safety.max_step_rad', [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
@@ -104,6 +118,11 @@ class SharedAutonomyNode(Node):
                 f'action_source must be one of {_VALID_ACTION_SOURCES}, '
                 f'got {self._action_source!r}'
             )
+        self._jog_mode = self.get_parameter('jog_mode').value
+        if self._jog_mode not in _VALID_JOG_MODES:
+            raise ValueError(
+                f'jog_mode must be one of {_VALID_JOG_MODES}, got {self._jog_mode!r}'
+            )
         self._base_frame = self.get_parameter('base_frame').value
         self._ee_frame = self.get_parameter('ee_frame').value
 
@@ -124,6 +143,7 @@ class SharedAutonomyNode(Node):
         self._control_dt = 1.0 / control_rate_hz
         self._joint_trajectory_topic = self.get_parameter('joint_trajectory_topic').value
         self._jog_scale_rad_s = self.get_parameter('jog_scale_rad_s').value
+        self._jog_scale_m_s = self.get_parameter('jog_scale_m_s').value
         self._assist_step_rad = self.get_parameter('assist_step_rad').value
 
         temperature = self.get_parameter('temperature').value
@@ -168,32 +188,39 @@ class SharedAutonomyNode(Node):
         self.create_subscription(Joy, '/joy', self._on_joy, 10)
         self.create_timer(self._control_dt, self._control_cycle)
 
-        self._action_source_ready = False
+        # potential_field is needed whenever it's the action_source *or*
+        # jog_mode needs its Jacobian for Cartesian jog conversion — even
+        # under action_source=policy.
+        self._needed_backends = {self._action_source}
+        if self._jog_mode == 'cartesian':
+            self._needed_backends.add('potential_field')
+        self._backend_ready = {name: False for name in self._needed_backends}
+
         if self._mode != 'observe_only':
-            self._action_source_check_timer = self.create_timer(
-                1.0, self._check_action_source_ready
-            )
+            self._backend_check_timer = self.create_timer(1.0, self._check_backends_ready)
 
         self.get_logger().info(
             f'shared_autonomy_node started: mode={self._mode}, '
-            f'action_source={self._action_source}, '
+            f'action_source={self._action_source}, jog_mode={self._jog_mode}, '
             f'goals={self._goal_names}, rate={control_rate_hz}Hz'
         )
 
     # ── Backend server readiness (PING/PONG handshake) ───────────────────
-    def _check_action_source_ready(self):
-        client = (
-            self._policy_client
-            if self._action_source == 'policy'
-            else self._potential_field_client
-        )
-        if client.ping():
-            self._action_source_ready = True
-            self._action_source_check_timer.cancel()
-            self.get_logger().info(f'{self._action_source} server ready (PING/PONG ok)')
+    def _check_backends_ready(self):
+        for name in self._needed_backends:
+            if self._backend_ready[name]:
+                continue
+            client = self._policy_client if name == 'policy' else self._potential_field_client
+            if client.ping():
+                self._backend_ready[name] = True
+                self.get_logger().info(f'{name} server ready (PING/PONG ok)')
+
+        if all(self._backend_ready.values()):
+            self._backend_check_timer.cancel()
         else:
+            still_waiting = [n for n in self._needed_backends if not self._backend_ready[n]]
             self.get_logger().warn(
-                f'waiting for {self._action_source} server...', throttle_duration_sec=3.0
+                f'waiting for {still_waiting} server(s)...', throttle_duration_sec=3.0
             )
 
     # ── State caching ─────────────────────────────────────────────────────
@@ -248,16 +275,16 @@ class SharedAutonomyNode(Node):
             self._log_observe_only(joint_pos, joint_vel, ee_pos_base)
             return
 
-        if not self._action_source_ready:
+        if not all(self._backend_ready.values()):
             return
 
         goal_deltas = self._compute_goal_deltas(joint_pos, joint_vel, ee_pos_base)
         if goal_deltas is None:
             return  # already logged by _compute_goal_deltas
 
-        human_delta = axes_to_joint_delta(
-            self._latest_joy.axes, self._jog_scale_rad_s, self._control_dt
-        )
+        human_delta = self._compute_human_delta(joint_pos)
+        if human_delta is None:
+            return  # already logged by _compute_human_delta
 
         self._goal_belief.update(human_delta, goal_deltas)
         probs = self._goal_belief.probabilities()
@@ -326,6 +353,23 @@ class SharedAutonomyNode(Node):
                 return None
             deltas[name] = delta
         return deltas
+
+    def _compute_human_delta(self, joint_pos):
+        """Return this cycle's human joint-space delta, or None (already logged) on failure."""
+        if self._jog_mode == 'joint':
+            return axes_to_joint_delta(
+                self._latest_joy.axes, self._jog_scale_rad_s, self._control_dt
+            )
+
+        cartesian_delta = axes_to_cartesian_delta(
+            self._latest_joy.axes, self._jog_scale_m_s, self._control_dt
+        )
+        human_delta = self._potential_field_client.compute_jog_delta(joint_pos, cartesian_delta)
+        if human_delta is None:
+            self.get_logger().warn(
+                'cartesian jog conversion failed, skipping cycle', throttle_duration_sec=3.0
+            )
+        return human_delta
 
     def _publish_trajectory(self, target_q: np.ndarray):
         msg = JointTrajectory()

@@ -36,6 +36,31 @@ def load_chain(urdf_path: Optional[Path] = None) -> kp.chain.SerialChain:
     return kp.build_serial_chain_from_urdf(urdf_bytes, TIP_FRAME, ROOT_FRAME)
 
 
+def cartesian_delta_to_joint_delta(
+    chain: kp.chain.SerialChain,
+    joint_pos: np.ndarray,
+    cartesian_delta: np.ndarray,
+    damping_lambda: float,
+) -> np.ndarray:
+    """
+    Convert a desired Cartesian (position-only) delta into a joint delta.
+
+    Through the damped least-squares pseudoinverse of the position-only
+    (3x6) Jacobian — robust near kinematic singularities, unlike the
+    plain Jacobian transpose. This is the one piece of differential-
+    kinematics math both compute_field_delta() (attraction toward a
+    target) and a direct Cartesian joystick jog conversion need; both
+    call this rather than duplicating it.
+    """
+    joint_pos = np.asarray(joint_pos, dtype=np.float64)
+    jacobian_pos = chain.jacobian(joint_pos)[:3, :]
+    damped_pinv = jacobian_pos.T @ np.linalg.inv(
+        jacobian_pos @ jacobian_pos.T + (damping_lambda**2) * np.eye(3)
+    )
+    delta = damped_pinv @ np.asarray(cartesian_delta, dtype=np.float64)
+    return delta.astype(np.float32)
+
+
 def compute_field_delta(
     chain: kp.chain.SerialChain,
     joint_pos: np.ndarray,
@@ -46,18 +71,10 @@ def compute_field_delta(
     """
     Compute one cycle's attractive-potential-field joint delta.
 
-    error = target_xyz - ee_pos (via FK), converted to a joint delta
-    through the damped least-squares pseudoinverse of the position-only
-    (3x6) Jacobian — robust near kinematic singularities, unlike the
-    plain Jacobian transpose.
+    error = target_xyz - ee_pos (via FK), converted to a joint delta via
+    cartesian_delta_to_joint_delta().
     """
     joint_pos = np.asarray(joint_pos, dtype=np.float64)
     ee_pos = np.array(chain.forward_kinematics(joint_pos).pos)
     error = np.asarray(target_xyz, dtype=np.float64) - ee_pos
-
-    jacobian_pos = chain.jacobian(joint_pos)[:3, :]
-    damped_pinv = jacobian_pos.T @ np.linalg.inv(
-        jacobian_pos @ jacobian_pos.T + (damping_lambda**2) * np.eye(3)
-    )
-    delta = damped_pinv @ (k_p * error)
-    return delta.astype(np.float32)
+    return cartesian_delta_to_joint_delta(chain, joint_pos, k_p * error, damping_lambda)

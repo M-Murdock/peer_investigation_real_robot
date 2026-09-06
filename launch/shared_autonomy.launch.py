@@ -23,6 +23,15 @@ matching the active `action_source` needs to actually run —
 `start_policy_server`/`start_potential_field_server` default to match
 `action_source`'s own default, override both explicitly if you change it.
 
+The human's own jog input similarly picks between two sources
+(`jog_mode`): `cartesian` (default — sticks map to X/Y/Z end-effector
+motion via the same Jacobian machinery, intuitive "move in 3D" jogging
+regardless of arm configuration) or `joint` (sticks map straight to
+joints 1-4, unmodified from Milestone 2). `cartesian` needs
+potential_field_server's Jacobian even when action_source=policy, so
+`start_potential_field_server` stays defaulted `true` regardless of
+`action_source`.
+
 Usage:
     ros2 launch kinova_gen3_lite_rl_bridge shared_autonomy.launch.py \\
         mode:=observe_only start_potential_field_server:=false
@@ -93,7 +102,9 @@ def _launch_setup(context, *args, **kwargs):
     ee_frame = LaunchConfiguration('ee_frame').perform(context)
     joint_trajectory_topic = LaunchConfiguration('joint_trajectory_topic').perform(context)
     temperature = float(LaunchConfiguration('temperature').perform(context))
+    jog_mode = LaunchConfiguration('jog_mode').perform(context)
     jog_scale_rad_s = float(LaunchConfiguration('jog_scale_rad_s').perform(context))
+    jog_scale_m_s = float(LaunchConfiguration('jog_scale_m_s').perform(context))
     assist_step_rad = float(LaunchConfiguration('assist_step_rad').perform(context))
     k_p = LaunchConfiguration('k_p').perform(context)
     damping_lambda = LaunchConfiguration('damping_lambda').perform(context)
@@ -121,7 +132,9 @@ def _launch_setup(context, *args, **kwargs):
                 'potential_field_socket_path': field_socket_path,
                 'joint_trajectory_topic': joint_trajectory_topic,
                 'temperature': temperature,
+                'jog_mode': jog_mode,
                 'jog_scale_rad_s': jog_scale_rad_s,
+                'jog_scale_m_s': jog_scale_m_s,
                 'assist_step_rad': assist_step_rad,
             },
         ],
@@ -193,7 +206,14 @@ def generate_launch_description():
             default_value='/joint_trajectory_controller/joint_trajectory',
         ),
         DeclareLaunchArgument('temperature', default_value='3.0'),
+        DeclareLaunchArgument(
+            'jog_mode', default_value='cartesian',
+            description='Human jog input source: cartesian (default, sticks move the end '
+                        'effector in X/Y/Z via the Jacobian) or joint (sticks map straight '
+                        'to joints 1-4).',
+        ),
         DeclareLaunchArgument('jog_scale_rad_s', default_value='0.3'),
+        DeclareLaunchArgument('jog_scale_m_s', default_value='0.15'),
         DeclareLaunchArgument(
             'assist_step_rad', default_value='0.01',
             description='Per-cycle magnitude each goal direction is normalized to before '
@@ -204,8 +224,11 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument('k_p', default_value='2.0'),
         DeclareLaunchArgument('damping_lambda', default_value='0.05'),
-        # Defaults match action_source's own default (potential_field) —
-        # override both together if you switch action_source:=policy.
+        # potential_field_server defaults on: needed either as the default
+        # action_source or for the default jog_mode=cartesian's Jacobian.
+        # policy_server defaults off; turn it on (and consider turning
+        # potential_field_server off) only if you set action_source:=policy
+        # and jog_mode:=joint.
         DeclareLaunchArgument('start_policy_server', default_value='false'),
         DeclareLaunchArgument('start_potential_field_server', default_value='true'),
     ]
