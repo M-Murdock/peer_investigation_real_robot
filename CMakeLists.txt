@@ -64,6 +64,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_joy_joint_jog test/test_joy_joint_jog.py)
   ament_add_pytest_test(test_potential_field_math test/test_potential_field_math.py)
   ament_add_pytest_test(test_joy_cartesian_jog test/test_joy_cartesian_jog.py)
+  ament_add_pytest_test(test_gripper_toggle test/test_gripper_toggle.py)
 endif()
 
 ament_package()

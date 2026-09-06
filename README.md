@@ -264,16 +264,27 @@ cosine similarity between the human's jog direction and each goal's
 suggested direction (direction-only, deliberately not raw distance — an
 undertrained RL policy's action magnitude in particular varies goal to
 goal for reasons unrelated to direction, and would otherwise swamp
-whether the directions actually agree). `assist_step_rad` (default 0.01)
-normalizes each goal's suggested delta to this fixed magnitude before
-blending with the human's input — without it, a goal delta whose raw
-magnitude happens to be much larger than the human's deliberately tiny
-jog (a potential field far from its target, especially) dominates the
-final safety-clamped command regardless of belief, making the joystick
-seem to do nothing; found via real hardware testing. `k_p` (default 2.0)
-and `damping_lambda` (default 0.05) tune the potential field's gain and
-singularity-robustness, used whenever `action_source:=potential_field`
-or `jog_mode:=cartesian`.
+whether the directions actually agree). `assist_step_rad` (default 0.03,
+matching `safety.max_step_rad`) normalizes each goal's suggested delta to
+this fixed magnitude before blending with the human's input — without it,
+a goal delta whose raw magnitude happens to be much larger than the
+human's deliberately tiny jog (a potential field far from its target,
+especially) dominates the final safety-clamped command regardless of
+belief, making the joystick seem to do nothing; found via real hardware
+testing. `k_p` (default 2.0) and `damping_lambda` (default 0.05) tune the
+potential field's gain and singularity-robustness, used whenever
+`action_source:=potential_field` or `jog_mode:=cartesian`.
+
+**Gripper**: press the `A` button (`gripper_toggle.py`'s `TOGGLE_BUTTON`)
+to toggle the gripper open/closed, via the same `GripperCommand` action
+and position values (`0.0` open / `0.8` close)
+`gen3-lite-ros2/src/joy_teleop.py` already uses for its own LT/RT
+triggers — both teleop tools drive the same
+`gen3_lite_2f_gripper_controller`, which stays active alongside
+`joint_trajectory_controller` (no conflict, unlike `twist_controller`).
+Edge-triggered (one toggle per physical press, not per cycle held down)
+and gated on `mode:=live` like everything else this node actuates — a
+press in `observe_only`/`inference_only` is logged and ignored.
 
 ### Why two Python environments, concretely
 

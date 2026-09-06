@@ -41,9 +41,25 @@ regardless of the arm's current configuration). `cartesian` needs the
 potential field server for its Jacobian *even when action_source=policy*.
 See the project plan's "Milestone 2" through "Milestone 4" sections for
 the full rationale.
+
+A single Joy button (gripper_toggle.py's TOGGLE_BUTTON, 'A' by default)
+toggles the gripper open/closed via the existing
+gen3_lite_2f_gripper_controller action server — the exact same
+GripperCommand action and position constants
+gen3-lite-ros2/src/joy_teleop.py already uses for its own LT/RT triggers,
+just edge-triggered off a button instead. Gated on mode='live' like
+everything else this node actuates; a press in observe_only/inference_only
+is logged and ignored, not queued.
 """
 
+from control_msgs.action import GripperCommand
 from kinova_gen3_lite_rl_bridge.goal_belief import blend_action, GoalBelief
+from kinova_gen3_lite_rl_bridge.gripper_toggle import (
+    GRIPPER_CLOSE_POSITION,
+    GRIPPER_MAX_EFFORT,
+    GRIPPER_OPEN_POSITION,
+    toggle_button_rising_edge,
+)
 from kinova_gen3_lite_rl_bridge.joy_cartesian_jog import axes_to_cartesian_delta
 from kinova_gen3_lite_rl_bridge.joy_joint_jog import axes_to_joint_delta
 from kinova_gen3_lite_rl_bridge.observation_builder import (
@@ -57,6 +73,7 @@ from kinova_gen3_lite_rl_bridge.potential_field_client import PotentialFieldClie
 from kinova_gen3_lite_rl_bridge.safety_clamp import SafetyClamp, SafetyLimits
 import numpy as np
 import rclpy
+from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.node import Node
 from sensor_msgs.msg import JointState, Joy
@@ -92,6 +109,9 @@ class SharedAutonomyNode(Node):
         )
         self.declare_parameter(
             'joint_trajectory_topic', '/joint_trajectory_controller/joint_trajectory'
+        )
+        self.declare_parameter(
+            'gripper_action_name', '/gen3_lite_2f_gripper_controller/gripper_cmd'
         )
         self.declare_parameter('temperature', 3.0)
         self.declare_parameter('jog_mode', 'cartesian')
@@ -181,6 +201,12 @@ class SharedAutonomyNode(Node):
             name: np.zeros(ACTION_DIM, dtype=np.float32) for name in self._goal_names
         }
 
+        gripper_action_name = self.get_parameter('gripper_action_name').value
+        self._gripper_client = ActionClient(self, GripperCommand, gripper_action_name)
+        self._gripper_button_pressed = False
+        self._gripper_open = True  # assumed initial state, matching joy_teleop.py's own assumption
+        self._gripper_busy = False
+
         self._traj_pub = self.create_publisher(
             JointTrajectory, self._joint_trajectory_topic, 10
         )
@@ -229,6 +255,52 @@ class SharedAutonomyNode(Node):
 
     def _on_joy(self, msg: Joy):
         self._latest_joy = msg
+        self._handle_gripper_button(msg)
+
+    # ── Gripper toggle (edge-triggered on a single Joy button) ───────────
+    def _handle_gripper_button(self, msg: Joy):
+        rising_edge, pressed = toggle_button_rising_edge(
+            msg.buttons, self._gripper_button_pressed
+        )
+        self._gripper_button_pressed = pressed
+        if not rising_edge:
+            return
+
+        if self._mode != 'live':
+            self.get_logger().info(
+                f'gripper button pressed but mode={self._mode!r} (not live) — ignored'
+            )
+            return
+        if self._gripper_busy:
+            self.get_logger().warn('gripper button pressed while already moving — ignored')
+            return
+
+        self._gripper_open = not self._gripper_open
+        position = GRIPPER_OPEN_POSITION if self._gripper_open else GRIPPER_CLOSE_POSITION
+        self._send_gripper_command(position)
+
+    def _send_gripper_command(self, position: float):
+        if not self._gripper_client.wait_for_server(timeout_sec=1.0):
+            self.get_logger().warn('gripper action server not available')
+            return
+        self._gripper_busy = True
+        goal = GripperCommand.Goal()
+        goal.command.position = position
+        goal.command.max_effort = GRIPPER_MAX_EFFORT
+        future = self._gripper_client.send_goal_async(goal)
+        future.add_done_callback(self._on_gripper_goal_response)
+
+    def _on_gripper_goal_response(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.get_logger().warn('gripper goal rejected')
+            self._gripper_busy = False
+            return
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(self._on_gripper_result)
+
+    def _on_gripper_result(self, future):
+        self._gripper_busy = False
 
     # ── Main control loop ────────────────────────────────────────────────
     def _control_cycle(self):
