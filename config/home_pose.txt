@@ -1,0 +1,11 @@
+# Home waypoint for gen3-lite-ros2's joint_playback.py — all joints at
+# zero, matching the trained policy's home/default configuration
+# (reach_env_cfg.py's HOME_KEYFRAME) and the potential field's chain
+# origin. 15s duration: at this magnitude of joint swing from an
+# arbitrary starting pose, a shorter duration's *peak* spline velocity
+# (~1.875x the naive average — see the project plan) can exceed
+# joint_limits.yaml's per-joint cap and trip a real Kinova joint fault,
+# confirmed the hard way on real hardware. Validated safe at this
+# duration across multiple live sessions.
+# joint_1, joint_2, joint_3, joint_4, joint_5, joint_6, duration
+0, 0, 0, 0, 0, 0, 15.0

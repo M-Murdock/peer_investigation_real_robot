@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Kinova Gen3 Lite Study Control Panel</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+    gap: 20px;
+    background: #fff;
+    color: #111;
+  }
+  h1 { font-size: 1.1rem; font-weight: 600; }
+  .card {
+    width: 100%;
+    max-width: 360px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  label { font-size: 13px; color: #333; }
+  input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+  }
+  .radio-row { display: flex; gap: 16px; font-size: 14px; }
+  button {
+    cursor: pointer;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: #f5f5f5;
+    color: #111;
+    font-size: 14px;
+    padding: 10px 14px;
+    transition: background 0.08s;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:hover:not(:disabled) { background: #e8e8e8; }
+  button:disabled { color: #aaa; cursor: not-allowed; opacity: 0.6; }
+  button.stop { border-color: #c33; color: #c33; }
+  button.stop:hover:not(:disabled) { background: #fdeaea; }
+  .status-line { font-size: 13px; color: #555; }
+  .status-line .value { font-weight: 600; }
+  .status-running { color: #b8860b; }
+  .status-done { color: #2a7; }
+  .status-failed { color: #c33; }
+  #error-box {
+    font-size: 13px;
+    color: #c33;
+    min-height: 1.2em;
+  }
+</style>
+</head>
+<body>
+
+<h1>Kinova Gen3 Lite &mdash; Study Control Panel</h1>
+
+<div class="card">
+  <div>
+    <button id="home-btn" onclick="startHome()">Home Robot</button>
+    <div class="status-line">Homing: <span id="homing-status" class="value">idle</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <label for="user-id">Participant ID (numeric)</label>
+  <input type="text" id="user-id" inputmode="numeric" placeholder="e.g. 042" oninput="refreshButtons()"/>
+
+  <label>Environment</label>
+  <div class="radio-row">
+    <label><input type="radio" name="env" value="env_a" checked onchange="refreshButtons()"/> Env A</label>
+    <label><input type="radio" name="env" value="env_b" onchange="refreshButtons()"/> Env B</label>
+  </div>
+
+  <button id="start-btn" onclick="startStudy()">Start Study</button>
+  <button id="stop-btn" class="stop" onclick="stopStudy()" disabled>Stop Study</button>
+  <div class="status-line">Study: <span id="study-status" class="value">idle</span></div>
+</div>
+
+<div id="error-box"></div>
+
+<script>
+let latestStatus = { homing: 'idle', study: 'idle', has_homed: false };
+
+function selectedEnv() {
+  return document.querySelector('input[name="env"]:checked').value;
+}
+
+function showError(msg) {
+  document.getElementById('error-box').textContent = msg || '';
+}
+
+function setStatusText(elId, value) {
+  const el = document.getElementById(elId);
+  el.textContent = value;
+  el.className = 'value' + (value === 'running' ? ' status-running'
+    : value === 'done' ? ' status-done'
+    : value === 'failed' ? ' status-failed' : '');
+}
+
+function refreshButtons() {
+  const userId = document.getElementById('user-id').value.trim();
+  const userIdValid = /^[0-9]+$/.test(userId);
+  const studyRunning = latestStatus.study === 'running';
+  const homingRunning = latestStatus.homing === 'running';
+
+  document.getElementById('home-btn').disabled = studyRunning || homingRunning;
+  document.getElementById('start-btn').disabled =
+    studyRunning || homingRunning || !latestStatus.has_homed || !userIdValid;
+  document.getElementById('stop-btn').disabled = !studyRunning;
+}
+
+async function pollStatus() {
+  try {
+    const resp = await fetch('/status');
+    latestStatus = await resp.json();
+    setStatusText('homing-status', latestStatus.homing);
+    setStatusText('study-status', latestStatus.study);
+    refreshButtons();
+  } catch (e) {
+    // transient network hiccup while polling -- ignore, next poll will retry
+  }
+}
+
+async function startHome() {
+  showError('');
+  const resp = await fetch('/home', { method: 'POST' });
+  const data = await resp.json();
+  if (!resp.ok) { showError(data.error || 'failed to start homing'); }
+  pollStatus();
+}
+
+async function startStudy() {
+  showError('');
+  const userId = document.getElementById('user-id').value.trim();
+  const resp = await fetch('/start_study', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, env_id: selectedEnv() }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) { showError(data.error || 'failed to start study'); }
+  pollStatus();
+}
+
+async function stopStudy() {
+  showError('');
+  const resp = await fetch('/stop_study', { method: 'POST' });
+  if (!resp.ok) {
+    const data = await resp.json();
+    showError(data.error || 'failed to stop study');
+  }
+  pollStatus();
+}
+
+pollStatus();
+setInterval(pollStatus, 1000);
+</script>
+
+</body>
+</html>

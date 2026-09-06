@@ -23,8 +23,19 @@ install(PROGRAMS
   RENAME shared_autonomy_node
 )
 
+install(PROGRAMS
+  ${PROJECT_NAME}/study_control_panel.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME study_control_panel
+)
+
 install(DIRECTORY
   launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(DIRECTORY
+  web
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -34,6 +45,7 @@ install(FILES
   config/safety_limits.yaml
   config/rl_bridge_params.yaml
   config/shared_autonomy.yaml
+  config/home_pose.txt
   DESTINATION share/${PROJECT_NAME}/config
 )
 
@@ -66,6 +78,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_joy_cartesian_jog test/test_joy_cartesian_jog.py)
   ament_add_pytest_test(test_gripper_toggle test/test_gripper_toggle.py)
   ament_add_pytest_test(test_wrist_jog test/test_wrist_jog.py)
+  ament_add_pytest_test(test_study_session_validation test/test_study_session_validation.py)
 endif()
 
 ament_package()

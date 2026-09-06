@@ -156,3 +156,15 @@ integrator: parent has 0 (default), child has 3, keeping parent value
 WARNING Sun Sep  6 09:27:46 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
 integrator: parent has 0 (default), child has 3, keeping parent value
 
+WARNING Sun Sep  6 09:42:22 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sun Sep  6 09:42:28 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sun Sep  6 09:43:37 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+
+WARNING Sun Sep  6 09:43:43 2026: Attach conflict when attaching 'gen3_lite_gen3_lite_2f', policy is 'warning'
+integrator: parent has 0 (default), child has 3, keeping parent value
+

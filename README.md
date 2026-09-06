@@ -297,6 +297,48 @@ of its own — it's just another component of `human_delta`, so it's
 already safety-clamped and respects `mode` the same way the rest of the
 blended command does.
 
+### Study control panel (`study_control_panel`)
+
+A small browser-based control panel for running study sessions without a
+terminal: Home button, participant ID field, env A/B selector, Start/Stop
+Study. Built on Tornado (`gen3-lite-ros2/src/joy_web_bridge.py`'s existing
+pattern — already a workspace dependency; no `rclpy` needed here, since
+every action is just triggering a `ros2` CLI subprocess, not publishing a
+live topic) and modeled on `investigating_peer_real_robot/session_gui.py`'s
+(on `main`) subprocess-lifecycle pattern (SIGINT-first stop, `Popen` held
+as state).
+
+```bash
+ros2 run kinova_gen3_lite_rl_bridge study_control_panel
+# then open http://localhost:8080/ in a browser
+```
+
+**The real safety interlocks are server-side**, not just disabled
+buttons: only one study can run at a time; homing is rejected while a
+study is running; Start Study is rejected unless the robot has been
+homed at least once this server session (`has_homed`) and unless a
+numeric participant ID and a valid `env_id` were given. The panel
+computes nothing new about robot motion — it only shells out to
+already-validated commands: `ros2 run gen3-lite-ros2 joint_playback
+config/home_pose.txt` for Home, and `ros2 launch
+kinova_gen3_lite_rl_bridge shared_autonomy.launch.py mode:=live
+env_id:=<selected>` for Start Study. **Does not start `kortex_bringup`**
+— hardware bringup stays a separate manual step, same as every other
+launch file in this project.
+
+Starting a study also starts `ros2 bag record` (topics: `/joint_states`,
+`/joy`, `/joint_trajectory_controller/joint_trajectory` — arm state,
+human input, and the actual blended commands sent) into
+`~/kinova_study_sessions/<user_id>_<timestamp>/`, and appends a line to
+`sessions.csv` there for human-readable bookkeeping alongside the bag.
+Stop Study sends SIGINT to both the launch and the bag-record process
+(lets the bag finalize cleanly), falling back to terminate/kill if either
+doesn't exit within 10s.
+
+Useful flags: `--http-port` (default 8080), `--sessions-dir` (default
+`~/kinova_study_sessions`), `--rl-project-dir` (default this checkout's
+path — used to locate `config/home_pose.txt`).
+
 ### Why two Python environments, concretely
 
 - `policy_bridge_node` and everything under `kinova_gen3_lite_rl_bridge/`
